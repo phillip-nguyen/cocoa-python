@@ -33,40 +33,211 @@
 from ctypes import *
 from ctypes import util
 
-import sys
+import sys, platform
 __LP64__ = (sys.maxint > 2**32)
+__i386__ = (platform.machine() == 'i386')
+
+if sizeof(c_void_p) == 4:
+    c_ptrdiff_t = c_int32
+elif sizeof(c_void_p) == 8:
+    c_ptrdiff_t = c_int64
 
 ######################################################################
 
 objc = cdll.LoadLibrary(util.find_library('objc'))
 
-objc.sel_registerName.restype = c_void_p
-objc.sel_registerName.argtypes = [c_char_p]
+######################################################################
 
-objc.objc_msgSend.restype = c_void_p
-
-objc.objc_getClass.restype = c_void_p
-objc.objc_getClass.argtypes = [c_char_p]
-
-objc.objc_getMetaClass.restype = c_void_p
-objc.objc_getMetaClass.argtypes = [c_char_p]
-
-objc.objc_allocateClassPair.restype = c_void_p
-objc.objc_allocateClassPair.argtypes = [c_void_p, c_char_p, c_size_t]
-
-objc.objc_registerClassPair.restype = None
-objc.objc_registerClassPair.argtypes = [c_void_p]
-
-objc.class_addMethod.restype = None
-
-objc.class_getSuperclass.restype = c_void_p
-objc.class_getSuperclass.argtypes = [c_void_p]
-
+# BOOL class_addIvar(Class cls, const char *name, size_t size, uint8_t alignment, const char *types)
 objc.class_addIvar.restype = c_bool
 objc.class_addIvar.argtypes = [c_void_p, c_char_p, c_size_t, c_uint8, c_char_p]
 
+# BOOL class_addMethod(Class cls, SEL name, IMP imp, const char *types)
+objc.class_addMethod.restype = c_bool
+
+# BOOL class_addProtocol(Class cls, Protocol *protocol)
+objc.class_addProtocol.restype = c_bool
+objc.class_addProtocol.argtypes = [c_void_p, c_void_p]
+
+# BOOL class_conformsToProtocol(Class cls, Protocol *protocol)
+objc.class_conformsToProtocol.restype = c_bool
+objc.class_conformsToProtocol.argtypes = [c_void_p, c_void_p]
+
+# Ivar * class_copyIvarList(Class cls, unsigned int *outCount)
+# Return is an array of pointers of type Ivar describing instance variables.
+# The array has *outCount pointers followed by a NULL terminator.
+# You must free() the returned array.
+objc.class_copyIvarList.restype = POINTER(c_void_p)
+objc.class_copyIvarList.argtypes = [c_void_p, POINTER(c_uint)]
+
+# Method * class_copyMethodList(Class cls, unsigned int *outCount)
+# Return is an array of pointers of type Method describing instance methods.
+# The array has *outCount pointers followed by a NULL terminator.
+# You must free() the returned array.
+objc.class_copyMethodList.restype = POINTER(c_void_p)
+objc.class_copyMethodList.argtypes = [c_void_p, POINTER(c_uint)]
+
+# objc_property_t * class_copyPropertyList(Class cls, unsigned int *outCount)
+# Return is an array of pointers of type objc_property_t describing properties.
+# The array has *outCount pointers followed by a NULL terminator.
+# You must free() the returned array.
+objc.class_copyPropertyList.restype = POINTER(c_void_p)
+objc.class_copyPropertyList.argtypes = [c_void_p, POINTER(c_uint)]
+
+# Protocol ** class_copyProtocolList(Class cls, unsigned int *outCount)
+# Return is an array of pointers of type Protocol* describing protocols.
+# The array has *outCount pointers followed by a NULL terminator.
+# You must free() the returned array.
+objc.class_copyProtocolList.restype = POINTER(c_void_p)
+objc.class_copyProtocolList.argtypes = [c_void_p, POINTER(c_uint)]
+
+# id class_createInstance(Class cls, size_t extraBytes)
+objc.class_createInstance.restype = c_void_p
+objc.class_createInstance.argtypes = [c_void_p, c_size_t]
+
+# Method class_getClassMethod(Class aClass, SEL aSelector)
+# Will also search superclass for implementations.
+objc.class_getClassMethod.restype = c_void_p
+objc.class_getClassMethod.argtpes = [c_void_p, c_void_p]
+
+# Ivar class_getClassVariable(Class cls, const char* name)
+objc.class_getClassVariable.restype = c_void_p
+objc.class_getClassVariable.argtypes = [c_void_p, c_char_p]
+
+# Method class_getInstanceMethod(Class aClass, SEL aSelector)
+# Will also search superclass for implementations.
 objc.class_getInstanceMethod.restype = c_void_p
 objc.class_getInstanceMethod.argtypes = [c_void_p, c_void_p]
+
+# size_t class_getInstanceSize(Class cls)
+objc.class_getInstanceSize.restype = c_size_t
+objc.class_getInstanceSize.argtypes = [c_void_p]
+
+# Ivar class_getInstanceVariable(Class cls, const char* name)
+objc.class_getInstanceVariable.restype = c_void_p
+objc.class_getInstanceVariable.argtypes = [c_void_p, c_char_p]
+
+# const char *class_getIvarLayout(Class cls)
+objc.class_getIvarLayout.restype = c_char_p
+objc.class_getIvarLayout.argtypes = [c_void_p]
+
+# IMP class_getMethodImplementation(Class cls, SEL name)
+objc.class_getMethodImplementation.restype = c_void_p
+objc.class_getMethodImplementation.argtypes = [c_void_p, c_void_p]
+
+# IMP class_getMethodImplementation_stret(Class cls, SEL name)
+objc.class_getMethodImplementation_stret.restype = c_void_p
+objc.class_getMethodImplementation_stret.argtypes = [c_void_p, c_void_p]
+
+# const char * class_getName(Class cls)
+objc.class_getName.restype = c_char_p
+objc.class_getName.argtypes = [c_void_p]
+
+# objc_property_t class_getProperty(Class cls, const char *name)
+objc.class_getProperty.restype = c_void_p
+objc.class_getProperty.argtypes = [c_void_p, c_char_p]
+
+# Class class_getSuperclass(Class cls)
+objc.class_getSuperclass.restype = c_void_p
+objc.class_getSuperclass.argtypes = [c_void_p]
+
+# int class_getVersion(Class theClass)
+objc.class_getVersion.restype = c_int
+objc.class_getVersion.argtypes = [c_void_p]
+
+# const char *class_getWeakIvarLayout(Class cls)
+objc.class_getWeakIvarLayout.restype = c_char_p
+objc.class_getWeakIvarLayout.argtypes = [c_void_p]
+
+# BOOL class_isMetaClass(Class cls)
+objc.class_isMetaClass.restype = c_bool
+objc.class_isMetaClass.argtypes = [c_void_p]
+
+# IMP class_replaceMethod(Class cls, SEL name, IMP imp, const char *types)
+objc.class_replaceMethod.restype = c_void_p
+objc.class_replaceMethod.argtypes = [c_void_p, c_void_p, c_void_p, c_char_p]
+
+# BOOL class_respondsToSelector(Class cls, SEL sel)
+objc.class_respondsToSelector.restype = c_bool
+objc.class_respondsToSelector.argtypes = [c_void_p, c_void_p]
+
+# void class_setIvarLayout(Class cls, const char *layout)
+objc.class_setIvarLayout.restype = None
+objc.class_setIvarLayout.argtypes = [c_void_p, c_char_p]
+
+# Class class_setSuperclass(Class cls, Class newSuper)
+objc.class_setSuperclass.restype = c_void_p
+objc.class_setSuperclass.argtypes = [c_void_p, c_void_p]
+
+# void class_setVersion(Class theClass, int version)
+objc.class_setVersion.restype = None
+objc.class_setVersion.argtypes = [c_void_p, c_int]
+
+# void class_setWeakIvarLayout(Class cls, const char *layout)
+objc.class_setWeakIvarLayout.restype = None
+objc.class_setWeakIvarLayout.argtypes = [c_void_p, c_char_p]
+
+######################################################################
+
+# const char * ivar_getName(Ivar ivar)
+objc.ivar_getName.restype = c_char_p
+objc.ivar_getName.argtypes = [c_void_p]
+
+# ptrdiff_t ivar_getOffset(Ivar ivar)
+objc.ivar_getOffset.restype = c_ptrdiff_t
+objc.ivar_getOffset.argtypes = [c_void_p]
+
+# const char * ivar_getTypeEncoding(Ivar ivar)
+objc.ivar_getTypeEncoding.restype = c_char_p
+objc.ivar_getTypeEncoding.argtypes = [c_void_p]
+
+######################################################################
+
+objc.method_copyReturnType.restype = c_char_p
+
+objc.method_getName.restype = c_void_p
+objc.method_getName.argtypes = [c_void_p]
+
+objc.method_getTypeEncoding.restype = c_char_p
+objc.method_getTypeEncoding.argtypes = [c_void_p]
+
+######################################################################
+
+# Class objc_allocateClassPair(Class superclass, const char *name, size_t extraBytes)
+objc.objc_allocateClassPair.restype = c_void_p
+objc.objc_allocateClassPair.argtypes = [c_void_p, c_char_p, c_size_t]
+
+# id objc_getClass(const char *name)
+objc.objc_getClass.restype = c_void_p
+objc.objc_getClass.argtypes = [c_char_p]
+
+# int objc_getClassList(Class *buffer, int bufferLen)
+# Pass None for buffer to obtain just the total number of classes.
+objc.objc_getClassList.restype = c_int
+objc.objc_getClassList.argtypes = [c_void_p, c_int]
+
+# id objc_getMetaClass(const char *name)
+objc.objc_getMetaClass.restype = c_void_p
+objc.objc_getMetaClass.argtypes = [c_char_p]
+
+# Set return and argument types depending on context.
+# id objc_msgSend(id theReceiver, SEL theSelector, ...)
+# id objc_msgSendSuper(struct objc_super *super, SEL op,  ...)
+
+# void objc_msgSendSuper_stret(struct objc_super *super, SEL op, ...)
+objc.objc_msgSendSuper_stret.restype = None
+
+# double objc_msgSend_fpret(id self, SEL op, ...)
+# objc.objc_msgSend_fpret.restype = c_double
+
+# void objc_msgSend_stret(void * stretAddr, id theReceiver, SEL theSelector,  ...)
+objc.objc_msgSend_stret.restype = None
+
+# void objc_registerClassPair(Class cls)
+objc.objc_registerClassPair.restype = None
+objc.objc_registerClassPair.argtypes = [c_void_p]
+
+######################################################################
 
 objc.object_getClass.restype = c_void_p
 objc.object_getClass.argtypes = [c_void_p]
@@ -76,14 +247,24 @@ objc.object_setInstanceVariable.restype = c_void_p
 objc.object_getInstanceVariable.restype = c_void_p
 objc.object_getInstanceVariable.argtypes=[c_void_p, c_char_p, c_void_p]
 
-objc.method_getTypeEncoding.restype = c_char_p
-objc.method_getTypeEncoding.argtypes = [c_void_p]
+######################################################################
+
+objc.sel_getName.restype = c_char_p
+objc.sel_getName.argtypes = [c_void_p]
+
+objc.sel_registerName.restype = c_void_p
+objc.sel_registerName.argtypes = [c_char_p]
+
+######################################################################
 
 def get_selector(name):
     return c_void_p(objc.sel_registerName(name))
 
 def get_class(name):
     return c_void_p(objc.objc_getClass(name))
+
+def get_object_class(obj):
+    return c_void_p(objc.object_getClass(obj))
 
 def get_metaclass(name):
     return c_void_p(objc.objc_getMetaClass(name))
@@ -106,6 +287,19 @@ def x86_should_use_stret(restype):
         return False
     return True
 
+# http://www.sealiesoftware.com/blog/archive/2008/11/16/objc_explain_objc_msgSend_fpret.html
+def should_use_fpret(restype):
+    """Determine if objc_msgSend_fpret is required to return a floating point type."""
+    if not __i386__: 
+        # Unneeded on non-intel processors
+        return False
+    if __LP64__ and restype == c_longdouble:
+        # Use only for long double on x86_64
+        return True
+    if not __LP64__ and restype in (c_float, c_double, c_longdouble):
+        return True
+    return False
+
 # By default, assumes that restype is c_void_p
 # and that all arguments are wrapped inside c_void_p.
 # Use the restype and argtypes keyword arguments to 
@@ -120,7 +314,7 @@ def send_message(receiver, selName, *args, **kwargs):
     #print 'send_message', receiver, selName, args, kwargs
     argtypes = kwargs.get('argtypes', [])
     # Choose the correct version of objc_msgSend based on return type.
-    if restype in (c_float, c_double, c_longdouble):  # not valid on PPC
+    if should_use_fpret(restype):
         objc.objc_msgSend_fpret.restype = restype
         objc.objc_msgSend_fpret.argtypes = [c_void_p, c_void_p] + argtypes
         result = objc.objc_msgSend_fpret(receiver, selector, *args)
