@@ -64,28 +64,28 @@ objc.class_conformsToProtocol.restype = c_bool
 objc.class_conformsToProtocol.argtypes = [c_void_p, c_void_p]
 
 # Ivar * class_copyIvarList(Class cls, unsigned int *outCount)
-# Return is an array of pointers of type Ivar describing instance variables.
+# Returns an array of pointers of type Ivar describing instance variables.
 # The array has *outCount pointers followed by a NULL terminator.
 # You must free() the returned array.
 objc.class_copyIvarList.restype = POINTER(c_void_p)
 objc.class_copyIvarList.argtypes = [c_void_p, POINTER(c_uint)]
 
 # Method * class_copyMethodList(Class cls, unsigned int *outCount)
-# Return is an array of pointers of type Method describing instance methods.
+# Returns an array of pointers of type Method describing instance methods.
 # The array has *outCount pointers followed by a NULL terminator.
 # You must free() the returned array.
 objc.class_copyMethodList.restype = POINTER(c_void_p)
 objc.class_copyMethodList.argtypes = [c_void_p, POINTER(c_uint)]
 
 # objc_property_t * class_copyPropertyList(Class cls, unsigned int *outCount)
-# Return is an array of pointers of type objc_property_t describing properties.
+# Returns an array of pointers of type objc_property_t describing properties.
 # The array has *outCount pointers followed by a NULL terminator.
 # You must free() the returned array.
 objc.class_copyPropertyList.restype = POINTER(c_void_p)
 objc.class_copyPropertyList.argtypes = [c_void_p, POINTER(c_uint)]
 
 # Protocol ** class_copyProtocolList(Class cls, unsigned int *outCount)
-# Return is an array of pointers of type Protocol* describing protocols.
+# Returns an array of pointers of type Protocol* describing protocols.
 # The array has *outCount pointers followed by a NULL terminator.
 # You must free() the returned array.
 objc.class_copyProtocolList.restype = POINTER(c_void_p)
@@ -193,19 +193,65 @@ objc.ivar_getTypeEncoding.argtypes = [c_void_p]
 
 ######################################################################
 
-objc.method_copyReturnType.restype = c_char_p
+# char * method_copyArgumentType(Method method, unsigned int index)
+# You must free() the returned string.
+objc.method_copyArgumentType.restype = c_char_p
+objc.method_copyArgumentType.argtypes = [c_void_p, c_uint]
 
+# char * method_copyReturnType(Method method)
+# You must free() the returned string.
+objc.method_copyReturnType.restype = c_char_p
+objc.method_copyReturnType.argtypes = [c_void_p]
+
+# void method_exchangeImplementations(Method m1, Method m2)
+objc.method_exchangeImplementations.restype = None
+objc.method_exchangeImplementations.argtypes = [c_void_p, c_void_p]
+
+# void method_getArgumentType(Method method, unsigned int index, char *dst, size_t dst_len)
+# Functionally similar to strncpy(dst, parameter_type, dst_len).
+objc.method_getArgumentType.restype = None
+objc.method_getArgumentType.argtypes = [c_void_p, c_uint, c_char_p, c_size_t]
+
+# IMP method_getImplementation(Method method)
+objc.method_getImplementation.restype = c_void_p
+objc.method_getImplementation.argtypes = [c_void_p]
+
+# SEL method_getName(Method method)
 objc.method_getName.restype = c_void_p
 objc.method_getName.argtypes = [c_void_p]
 
+# unsigned method_getNumberOfArguments(Method method)
+objc.method_getNumberOfArguments.restype = c_uint
+objc.method_getNumberOfArguments.argtypes = [c_void_p]
+
+# void method_getReturnType(Method method, char *dst, size_t dst_len)
+# Functionally similar to strncpy(dst, return_type, dst_len)
+objc.method_getReturnType.restype = None
+objc.method_getReturnType.argtypes = [c_void_p, c_char_p, c_size_t]
+
+# const char * method_getTypeEncoding(Method method)
 objc.method_getTypeEncoding.restype = c_char_p
 objc.method_getTypeEncoding.argtypes = [c_void_p]
+
+# IMP method_setImplementation(Method method, IMP imp)
+objc.method_setImplementation.restype = c_void_p
+objc.method_setImplementation.argtypes = [c_void_p, c_void_p]
 
 ######################################################################
 
 # Class objc_allocateClassPair(Class superclass, const char *name, size_t extraBytes)
 objc.objc_allocateClassPair.restype = c_void_p
 objc.objc_allocateClassPair.argtypes = [c_void_p, c_char_p, c_size_t]
+
+# Protocol **objc_copyProtocolList(unsigned int *outCount)
+# Returns an array of *outcount pointers followed by NULL terminator.
+# You must free() the array.
+objc.objc_copyProtocolList.restype = POINTER(c_void_p)
+objc.objc_copyProtocolList.argtypes = [POINTER(c_int)]
+
+# id objc_getAssociatedObject(id object, void *key)
+objc.objc_getAssociatedObject.restype = c_void_p
+objc.objc_getAssociatedObject.argtypes = [c_void_p, c_void_p]
 
 # id objc_getClass(const char *name)
 objc.objc_getClass.restype = c_void_p
@@ -220,7 +266,11 @@ objc.objc_getClassList.argtypes = [c_void_p, c_int]
 objc.objc_getMetaClass.restype = c_void_p
 objc.objc_getMetaClass.argtypes = [c_char_p]
 
-# Set return and argument types depending on context.
+# Protocol *objc_getProtocol(const char *name)
+objc.objc_getProtocol.restype = c_void_p
+objc.objc_getProtocol.argtypes = [c_char_p]
+
+# You should set return and argument types depending on context.
 # id objc_msgSend(id theReceiver, SEL theSelector, ...)
 # id objc_msgSendSuper(struct objc_super *super, SEL op,  ...)
 
@@ -237,21 +287,106 @@ objc.objc_msgSend_stret.restype = None
 objc.objc_registerClassPair.restype = None
 objc.objc_registerClassPair.argtypes = [c_void_p]
 
+# void objc_removeAssociatedObjects(id object)
+objc.objc_removeAssociatedObjects.restype = None
+objc.objc_removeAssociatedObjects.argtypes = [c_void_p]
+
+# void objc_setAssociatedObject(id object, void *key, id value, objc_AssociationPolicy policy)
+objc.objc_setAssociatedObject.restype = None
+objc.objc_setAssociatedObject.argtypes = [c_void_p, c_void_p, c_void_p, c_int]
+
 ######################################################################
 
+# id object_copy(id obj, size_t size)
+objc.object_copy.restype = c_void_p
+objc.object_copy.argtypes = [c_void_p, c_size_t]
+
+# id object_dispose(id obj)
+objc.object_dispose.restype = c_void_p
+objc.object_dispose.argtypes = [c_void_p]
+
+# Class object_getClass(id object)
 objc.object_getClass.restype = c_void_p
 objc.object_getClass.argtypes = [c_void_p]
 
-objc.object_setInstanceVariable.restype = c_void_p
+# const char *object_getClassName(id obj)
+objc.object_getClassName.restype = c_char_p
+objc.object_getClassName.argtypes = [c_void_p]
 
+# Ivar object_getInstanceVariable(id obj, const char *name, void **outValue)
 objc.object_getInstanceVariable.restype = c_void_p
 objc.object_getInstanceVariable.argtypes=[c_void_p, c_char_p, c_void_p]
 
+# id object_getIvar(id object, Ivar ivar)
+objc.object_getIvar.restype = c_void_p
+objc.object_getIvar.argtypes = [c_void_p, c_void_p]
+
+# Class object_setClass(id object, Class cls)
+objc.object_setClass.restype = c_void_p
+objc.object_setClass.argtypes = [c_void_p, c_void_p]
+
+# Ivar object_setInstanceVariable(id obj, const char *name, void *value)
+# Set argtypes based on the data type of the instance variable.
+objc.object_setInstanceVariable.restype = c_void_p
+
+# void object_setIvar(id object, Ivar ivar, id value)
+objc.object_setIvar.restype = None
+objc.object_setIvar.argtypes = [c_void_p, c_void_p, c_void_p]
+
 ######################################################################
 
+# const char *property_getAttributes(objc_property_t property)
+objc.property_getAttributes.restype = c_char_p
+objc.property_getAttributes.argtypes = [c_void_p]
+
+# const char *property_getName(objc_property_t property)
+objc.property_getName.restype = c_char_p
+objc.property_getName.argtypes = [c_void_p]
+
+######################################################################
+
+# BOOL protocol_conformsToProtocol(Protocol *proto, Protocol *other)
+objc.protocol_conformsToProtocol.restype = c_bool
+objc.protocol_conformsToProtocol.argtypes = [c_void_p, c_void_p]
+
+class OBJC_METHOD_DESCRIPTION(Structure):
+    _fields_ = [ ("name", c_void_p), ("types", c_char_p) ]
+
+# struct objc_method_description *protocol_copyMethodDescriptionList(Protocol *p, BOOL isRequiredMethod, BOOL isInstanceMethod, unsigned int *outCount)
+# You must free() the returned array.
+objc.protocol_copyMethodDescriptionList.restype = POINTER(OBJC_METHOD_DESCRIPTION)
+objc.protocol_copyMethodDescriptionList.argtypes = [c_void_p, c_bool, c_bool, POINTER(c_uint)]
+
+# objc_property_t * protocol_copyPropertyList(Protocol *protocol, unsigned int *outCount)
+objc.protocol_copyPropertyList.restype = c_void_p
+objc.protocol_copyPropertyList.argtypes = [c_void_p, POINTER(c_uint)]
+
+# Protocol **protocol_copyProtocolList(Protocol *proto, unsigned int *outCount)
+objc.protocol_copyProtocolList = POINTER(c_void_p)
+objc.protocol_copyProtocolList.argtypes = [c_void_p, POINTER(c_uint)]
+
+# struct objc_method_description protocol_getMethodDescription(Protocol *p, SEL aSel, BOOL isRequiredMethod, BOOL isInstanceMethod)
+objc.protocol_getMethodDescription.restype = OBJC_METHOD_DESCRIPTION
+objc.protocol_getMethodDescription.argtypes = [c_void_p, c_void_p, c_bool, c_bool]
+
+# const char *protocol_getName(Protocol *p)
+objc.protocol_getName.restype = c_char_p
+objc.protocol_getName.argtypes = [c_void_p]
+
+######################################################################
+
+# const char* sel_getName(SEL aSelector)
 objc.sel_getName.restype = c_char_p
 objc.sel_getName.argtypes = [c_void_p]
 
+# SEL sel_getUid(const char *str)
+# Use sel_registerName instead.
+
+# BOOL sel_isEqual(SEL lhs, SEL rhs)
+objc.sel_isEqual.restype = c_bool
+objc.sel_isEqual.argtypes = [c_void_p, c_void_p]
+
+# SEL sel_registerName(const char *str)
 objc.sel_registerName.restype = c_void_p
 objc.sel_registerName.argtypes = [c_char_p]
 
@@ -319,7 +454,6 @@ def send_message(receiver, selName, *args, **kwargs):
         objc.objc_msgSend_fpret.argtypes = [c_void_p, c_void_p] + argtypes
         result = objc.objc_msgSend_fpret(receiver, selector, *args)
     elif x86_should_use_stret(restype):
-        objc.objc_msgSend_stret.restype = None
         objc.objc_msgSend_stret.argtypes = [POINTER(restype), c_void_p, c_void_p] + argtypes
         result = restype()
         objc.objc_msgSend_stret(byref(result), receiver, selector, *args)
@@ -398,9 +532,9 @@ else:
     NSInteger = c_int
     NSUInteger = c_uint
     CGFloat = c_float
-    NSPointEncoding = '{NSPoint=ff}'
-    NSSizeEncoding = '{NSSize=ff}'
-    NSRectEncoding = '{NSRect={NSPoint=ff}{NSSize=ff}}'
+    NSPointEncoding = '{_NSPoint=ff}'
+    NSSizeEncoding = '{_NSSize=ff}'
+    NSRectEncoding = '{_NSRect={_NSPoint=ff}{_NSSize=ff}}'
 
 NSIntegerEncoding = encoding_for_ctype(NSInteger)
 NSUIntegerEncoding = encoding_for_ctype(NSUInteger)
