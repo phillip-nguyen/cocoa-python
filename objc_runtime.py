@@ -693,7 +693,7 @@ def CFSTR(string):
     return c_void_p(cf.CFStringCreateWithCString(
             None, string.encode('utf8'), kCFStringEncodingUTF8))
 
-def NSString(string):
+def get_NSString(string):
     """Autoreleased version of CFSTR"""
     return send_message(CFSTR(string), 'autorelease')
 
