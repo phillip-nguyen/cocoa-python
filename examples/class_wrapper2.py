@@ -1,6 +1,7 @@
+# DEPRECATED
 # More complete attempt at wrapping Objective-C objects in python.
 
-from objc_runtime import *
+from cocoapy.runtime import *
 
 class ObjCMethod(object):
     """This represents an unbound Objective-C method (really an IMP)."""

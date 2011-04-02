@@ -1,6 +1,7 @@
+# DEPRECATED
 # First attempt at wrapping up Objective-C objects using python classes.
 
-from objc_runtime import *
+from cocoapy.runtime import *
 
 class ObjCMethod(object):
 

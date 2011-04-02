@@ -1,6 +1,6 @@
 # Simple example of using ctypes with Cocoa to create an NSWindow.
 
-from objc_runtime import *
+from cocoapy import *
 
 def create_window():
     print 'creating window'
@@ -11,7 +11,7 @@ def create_window():
                           NSTitledWindowMask | NSClosableWindowMask | NSMiniaturizableWindowMask | NSResizableWindowMask,
                           NSBackingStoreBuffered,
                           0)
-    send_message(window, 'setTitle:', NSString("My Awesome Window"))
+    send_message(window, 'setTitle:', get_NSString("My Awesome Window"))
     send_message(window, 'makeKeyAndOrderFront:', None)
     return window
 

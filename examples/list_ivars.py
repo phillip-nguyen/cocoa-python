@@ -1,6 +1,6 @@
 # List all the instance variables of an Objective-C class.
 
-from objc_runtime import *
+from cocoapy.runtime import *
 
 def list_ivars(cls):
     count = c_uint()

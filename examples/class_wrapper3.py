@@ -3,7 +3,7 @@
 # Implementation of ObjCSubclass can be made slightly simpler.
 
 import weakref
-from objc_runtime import *
+from cocoapy.runtime import *
 
 class ObjCMethod(object):
     """This represents an unbound Objective-C method (really an IMP)."""

@@ -1,6 +1,6 @@
 # List the names of all loaded Objective-C classes.
 
-from objc_runtime import *
+from cocoapy.runtime import *
 
 
 count = objc.objc_getClassList(None, 0)

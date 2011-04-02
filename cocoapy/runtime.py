@@ -29,11 +29,15 @@
 # ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
 # POSSIBILITY OF SUCH DAMAGE.
 
+import sys
+import platform
+import weakref
 
 from ctypes import *
 from ctypes import util
 
-import sys, platform
+from cocoatypes import *
+
 __LP64__ = (sys.maxint > 2**32)
 __i386__ = (platform.machine() == 'i386')
 
@@ -490,93 +494,6 @@ def send_super(receiver, selName, *args, **kwargs):
         result = c_void_p(result)
     return result
 
-# After calling create_subclass, you must first register
-# it with register_subclass before you may use it.
-# You can add new methods after the class is registered,
-# but you cannot add any new ivars.
-def create_subclass(superclass, name):
-    if isinstance(superclass, basestring):
-        superclass = get_class(superclass)
-    return c_void_p(objc.objc_allocateClassPair(superclass, name, 0))
-
-def register_subclass(subclass):
-    objc.objc_registerClassPair(subclass)
-
-# Convenience functions for creating new objects.
-def alloc_init(cls):
-    return send_message(cls, 'new')
-
-def alloc_init_autorelease(cls):
-    return send_message(send_message(cls, 'new'), 'autorelease')
-
-######################################################################
-
-def encoding_for_ctype(vartype):
-    typecodes = {c_char:'c', c_int:'i', c_short:'s', c_long:'l', c_longlong:'q',
-                 c_ubyte:'C', c_uint:'I', c_ushort:'S', c_ulong:'L', c_ulonglong:'Q',
-                 c_float:'f', c_double:'d', c_bool:'B', c_char_p:'*', c_void_p:'@',
-                 py_object:'@'}
-    return typecodes.get(vartype, '?')
-
-# Note CGBase.h located at
-# /System/Library/Frameworks/ApplicationServices.framework/Frameworks/CoreGraphics.framework/Headers/CGBase.h
-# defines CGFloat as double if __LP64__, otherwise it's a float.
-if __LP64__:
-    NSInteger = c_long
-    NSUInteger = c_ulong
-    CGFloat = c_double
-    NSPointEncoding = '{CGPoint=dd}'
-    NSSizeEncoding = '{CGSize=dd}'
-    NSRectEncoding = '{CGRect={CGPoint=dd}{CGSize=dd}}'
-else:
-    NSInteger = c_int
-    NSUInteger = c_uint
-    CGFloat = c_float
-    NSPointEncoding = '{_NSPoint=ff}'
-    NSSizeEncoding = '{_NSSize=ff}'
-    NSRectEncoding = '{_NSRect={_NSPoint=ff}{_NSSize=ff}}'
-
-NSIntegerEncoding = encoding_for_ctype(NSInteger)
-NSUIntegerEncoding = encoding_for_ctype(NSUInteger)
-CGFloatEncoding = encoding_for_ctype(CGFloat)    
-
-# from /System/Library/Frameworks/Foundation.framework/Headers/NSGeometry.h
-class NSPoint(Structure):
-    _fields_ = [ ("x", CGFloat), ("y", CGFloat) ]
-CGPoint = NSPoint
-
-class NSSize(Structure):
-    _fields_ = [ ("width", CGFloat), ("height", CGFloat) ]
-
-class NSRect(Structure):
-    _fields_ = [ ("origin", NSPoint), ("size", NSSize) ]
-CGRect = NSRect
-
-def NSMakeSize(w, h):
-    return NSSize(w, h)
-
-def NSMakeRect(x, y, w, h):
-    return NSRect(NSPoint(x, y), NSSize(w, h))
-
-# NSDate.h
-NSTimeInterval = c_double
-
-CFIndex = c_long
-UniChar = c_ushort
-unichar = c_wchar  # (actually defined as c_ushort in NSString.h, but need ctypes to convert properly)
-CGGlyph = c_ushort
-
-# CFRange struct defined in CFBase.h
-# This replaces the CFRangeMake(LOC, LEN) macro.
-class CFRange(Structure):
-    _fields_ = [ ("location", CFIndex), ("length", CFIndex) ]
-
-# NSRange.h  (Note, not defined the same as CFRange)
-class NSRange(Structure):
-    _fields_ = [ ("location", NSUInteger), ("length", NSUInteger) ]
-
-NSZeroPoint = NSPoint(0,0)
-
 ######################################################################
 
 cfunctype_table = {}
@@ -637,6 +554,18 @@ def cfunctype_for_encoding(encoding):
 
 ######################################################################
 
+# After calling create_subclass, you must first register
+# it with register_subclass before you may use it.
+# You can add new methods after the class is registered,
+# but you cannot add any new ivars.
+def create_subclass(superclass, name):
+    if isinstance(superclass, basestring):
+        superclass = get_class(superclass)
+    return c_void_p(objc.objc_allocateClassPair(superclass, name, 0))
+
+def register_subclass(subclass):
+    objc.objc_registerClassPair(subclass)
+
 # types is a string encoding the argument types of the method.
 # The first char of types is the return type ('v' if void)
 # The second char must be '@' for id self.
@@ -668,99 +597,359 @@ def cast_to_pyobject(obj):
 
 ######################################################################
 
-cf = cdll.LoadLibrary(util.find_library('CoreFoundation'))
+class ObjCMethod(object):
+    """This represents an unbound Objective-C method (really an IMP)."""
 
-kCFStringEncodingUTF8 = 0x08000100
-CFAllocatorRef = c_void_p
-CFStringEncoding = c_uint32
+    # Note, need to map 'c' to c_byte rather than c_char, because otherwise
+    # ctypes converts the value into a one-character string which is generally
+    # not what we want at all, especially when the 'c' represents a bool var.
+    typecodes = {'c':c_byte, 'i':c_int, 's':c_short, 'l':c_long, 'q':c_longlong, 
+                 'C':c_ubyte, 'I':c_uint, 'S':c_ushort, 'L':c_ulong, 'Q':c_ulonglong, 
+                 'f':c_float, 'd':c_double, 'B':c_bool, 'v':None, 'Vv':None, '*':c_char_p,
+                 '@':c_void_p, '#':c_void_p, ':':c_void_p, '^v':c_void_p, 
+                 NSPointEncoding:NSPoint, NSSizeEncoding:NSSize, NSRectEncoding:NSRect}
 
-cf.CFStringCreateWithCString.restype = c_void_p
-cf.CFStringCreateWithCString.argtypes = [CFAllocatorRef, c_char_p, CFStringEncoding]
+    cfunctype_table = {}
+    
+    def __init__(self, method):
+        """Initialize with an Objective-C Method pointer.  We then determine
+        the return type and argument type information of the method."""
+        self.selector = c_void_p(objc.method_getName(method))
+        self.name = objc.sel_getName(self.selector)
+        self.pyname = self.name.replace(':', '_')
+        self.encoding = objc.method_getTypeEncoding(method)
+        self.return_type = objc.method_copyReturnType(method)
+        self.nargs = objc.method_getNumberOfArguments(method)
+        self.imp = objc.method_getImplementation(method)
+        self.argument_types = []
+        for i in range(self.nargs):
+            buffer = c_buffer(512)
+            objc.method_getArgumentType(method, i, buffer, len(buffer))
+            self.argument_types.append(buffer.value)
+        # Get types for all the arguments.
+        try:
+            self.argtypes = [self.ctype_for_encoding(t) for t in self.argument_types]
+        except:
+            #print 'no argtypes encoding for %s (%s)' % (self.name, self.argument_types)
+            self.argtypes = None
+        # Get types for the return type.
+        try:
+            if self.return_type == '@':
+                self.restype = ObjCInstance
+            elif self.return_type == '#':
+                self.restype = ObjCClass
+            else:
+                self.restype = self.ctype_for_encoding(self.return_type)
+        except:
+            #print 'no restype encoding for %s (%s)' % (self.name, self.return_type)
+            self.restype = None
+        self.func = None
 
-cf.CFRelease.restype = c_void_p
-cf.CFRelease.argtypes = [c_void_p]
+    def ctype_for_encoding(self, encoding):
+        """Return ctypes type for an encoded Objective-C type."""
+        if encoding in self.typecodes:
+            return self.typecodes[encoding]
+        elif encoding[0] == '^' and encoding[1:] in self.typecodes:
+            return POINTER(self.typecodes[encoding[1:]])
+        elif encoding[0] == 'r' and encoding[1:] in self.typecodes:
+            # const decorator, don't care
+            return self.typecodes[encoding[1:]]
+        else:
+            raise Exception('unknown encoding for %s: %s' % (self.name, encoding))
+        
+    def get_prototype(self):
+        """Returns a ctypes CFUNCTYPE for the method."""
+        self.prototype = CFUNCTYPE(self.restype, *self.argtypes)
+        return self.prototype
+    
+    def __repr__(self):
+        return "<ObjCMethod: %s %s>" % (self.name, self.encoding)
 
-cf.CFStringGetLength.restype = CFIndex
-cf.CFStringGetLength.argtypes = [c_void_p]
-
-cf.CFStringGetMaximumSizeForEncoding.restype = CFIndex
-cf.CFStringGetMaximumSizeForEncoding.argtypes = [CFIndex, CFStringEncoding]
-
-cf.CFStringGetCString.restype = c_bool
-cf.CFStringGetCString.argtypes = [c_void_p, c_char_p, CFIndex, CFStringEncoding]
-
-def CFSTR(string):
-    return c_void_p(cf.CFStringCreateWithCString(
-            None, string.encode('utf8'), kCFStringEncodingUTF8))
-
-def get_NSString(string):
-    """Autoreleased version of CFSTR"""
-    return send_message(CFSTR(string), 'autorelease')
-
-def cfstring_to_string(cfstring):
-    length = cf.CFStringGetLength(cfstring)
-    size = cf.CFStringGetMaximumSizeForEncoding(length, kCFStringEncodingUTF8)
-    buffer = c_buffer(size + 1)
-    result = cf.CFStringGetCString(cfstring, buffer, len(buffer), kCFStringEncodingUTF8)
-    if result:
-        return unicode(buffer.value, 'utf-8')
-
-cf.CFArrayGetValueAtIndex.restype = c_void_p
-cf.CFArrayGetValueAtIndex.argtypes = [c_void_p, CFIndex]
-
-def cfarray_to_list(cfarray):
-    count = cf.CFArrayGetCount(cfarray)
-    return [ c_void_p(cf.CFArrayGetValueAtIndex(cfarray, i))
-             for i in range(count) ]
-
-cf.CFDataCreate.restype = c_void_p
-cf.CFDataCreate.argtypes = [c_void_p, c_void_p, CFIndex]
-
-cf.CFDictionaryGetValue.restype = c_void_p
-cf.CFDictionaryGetValue.argtypes = [c_void_p, c_void_p]
-
-# Helper function to convert CFNumber to a Python float.
-kCFNumberFloatType = 12
-def cfnumber_to_float(cfnumber):
-    result = c_float()
-    if cf.CFNumberGetValue(cfnumber, kCFNumberFloatType, byref(result)):
-        return result.value
+    def get_callable(self):
+        """Returns a python-callable version of the method's IMP."""
+        if not self.func:
+            prototype = self.get_prototype()
+            self.func = prototype(self.imp)
+            self.func.restype = self.restype
+            self.func.argtypes = self.argtypes
+        return self.func
+   
+    def __call__(self, objc_id, *args):
+        """Call the method with the given id and arguments.  You do not need
+        to pass in the selector as an argument since it will be automatically 
+        provided."""
+        f = self.get_callable()
+        try:
+            return f(objc_id, self.selector, *args)
+        except ArgumentError as error:
+            # Add more useful info to argument error exceptions, then reraise.
+            error.args += ('selector: ' + self.name,
+                           'argtypes: ' + str(self.argtypes),
+                           'encoding: ' + self.encoding)
+            raise
 
 ######################################################################
 
-# This is a factory class which creates Objective-C subclasses.
-# The python object created when you instantiate this class
-# represents the Objective-C *class*.  It does not represent
-# an instance of that class.  Instances are created by using 
-# the normal Ojective-C alloc & init messages sent to the
-# subclass with send_message.
+class ObjCBoundMethod(object):
+    """This represents an Objective-C method (an IMP) which has been bound 
+    to some id which will be passed as the first parameter to the method."""
+
+    def __init__(self, method, objc_id):
+        """Initialize with a method and Objective-C id (class or object)."""
+        self.method = method
+        self.objc_id = objc_id
+
+    def __repr__(self):
+        return '<ObjCBoundMethod %s (%s)>' % (self.method.name, self.objc_id)
+
+    def __call__(self, *args):
+        """Call the method with the given arguments."""
+        return self.method(self.objc_id, *args)
+
+######################################################################
+ 
+class ObjCClass(object):
+    """Python wrapper for an Objective-C class."""
+
+    # We only create one Python object for each Objective-C class.
+    # Any future calls with the same class will return the previously
+    # created Python object.  Note that these aren't weak references.
+    # After you create an ObjCClass, it will exist until the end of the
+    # program.
+    _registered_classes = {}
+
+    def __new__(cls, class_name_or_ptr):
+        """Create a new ObjCClass instance or return a previously created
+        instance for the given Objective-C class.  The argument may be either
+        the name of the class to retrieve, or a pointer to the class."""
+        # Determine name and ptr values from passed in argument.
+        if isinstance(class_name_or_ptr, basestring):
+            name = class_name_or_ptr
+            ptr = c_void_p(objc.objc_getClass(name))
+        else:
+            ptr = class_name_or_ptr
+            # Make sure that ptr value is wrapped in c_void_p object
+            # for safety when passing as ctypes argument.
+            if not isinstance(ptr, c_void_p):
+                ptr = c_void_p(ptr)
+            name = objc.class_getName(ptr)
+            
+        # Check if we've already created a Python object for this class
+        # and if so, return it rather than making a new one.
+        if name in cls._registered_classes:
+            return cls._registered_classes[name]
+
+        # Otherwise create a new Python object and then initialize it.
+        objc_class = super(ObjCClass, cls).__new__(cls)
+        objc_class.ptr = ptr
+        objc_class.name = name
+        objc_class.instance_methods = {}   # mapping of name -> instance method
+        objc_class.class_methods = {}      # mapping of name -> class method
+        objc_class._as_parameter_ = ptr    # for ctypes argument passing
+
+        # Store the new class in dictionary of registered classes.
+        cls._registered_classes[name] = objc_class
+
+        # Not sure this is necessary...
+        objc_class.cache_instance_methods()
+        objc_class.cache_class_methods()
+
+        return objc_class
+
+    def __repr__(self):
+        return "<ObjCClass: %s at %s>" % (self.name, str(self.ptr.value))
+        
+    def cache_instance_methods(self):
+        """Create and store python representations of all instance methods 
+        implemented by this class (but does not find methods of superclass)."""
+        count = c_uint()
+        method_array = objc.class_copyMethodList(self.ptr, byref(count))
+        for i in range(count.value):
+            method = c_void_p(method_array[i])
+            objc_method = ObjCMethod(method)
+            self.instance_methods[objc_method.pyname] = objc_method
+
+    def cache_class_methods(self):
+        """Create and store python representations of all class methods 
+        implemented by this class (but does not find methods of superclass)."""
+        count = c_uint()
+        method_array = objc.class_copyMethodList(objc.object_getClass(self.ptr), byref(count))
+        for i in range(count.value):
+            method = c_void_p(method_array[i])
+            objc_method = ObjCMethod(method)
+            self.class_methods[objc_method.pyname] = objc_method
+
+    def get_instance_method(self, name):
+        """Returns a python representation of the named instance method, 
+        either by looking it up in the cached list of methods or by searching
+        for and creating a new method object."""
+        if name in self.instance_methods:
+            return self.instance_methods[name]
+        else:
+            # If method name isn't in the cached list, it might be a method of
+            # the superclass, so call class_getInstanceMethod to check.
+            method = c_void_p(objc.class_getInstanceMethod(self.ptr, get_selector(name)))
+            if method.value:
+                objc_method = ObjCMethod(method)
+                self.instance_methods[name] = objc_method
+                return objc_method
+        return None
+
+    def get_class_method(self, name):
+        """Returns a python representation of the named class method, 
+        either by looking it up in the cached list of methods or by searching
+        for and creating a new method object."""
+        if name in self.class_methods:
+            return self.class_methods[name]
+        else:
+            # If method name isn't in the cached list, it might be a method of
+            # the superclass, so call class_getInstanceMethod to check.
+            method = c_void_p(objc.class_getClassMethod(self.ptr, get_selector(name)))
+            if method.value:
+                objc_method = ObjCMethod(method)
+                self.class_methods[name] = objc_method
+                return objc_method
+        return None
+        
+    def __getattr__(self, name):
+        """Returns a callable method object with the given name."""
+        # If name refers to a class method, then return a callable object
+        # for the class method with self.ptr as hidden first parameter.
+        method = self.get_class_method(name)
+        if method:
+            return ObjCBoundMethod(method, self.ptr)
+        # If name refers to an instance method, then simply return the method.
+        # The caller will need to supply an instance as the first parameter.
+        method = self.get_instance_method(name)
+        if method: 
+            return method
+        # Otherwise, raise an exception.
+        raise AttributeError('ObjCClass %s has no attribute %s' % (self.name, name))
+
+######################################################################
+
+class ObjCInstance(object):
+    """Python wrapper for an Objective-C instance."""
+
+    _cached_objects = weakref.WeakValueDictionary()
+
+    def __new__(cls, object_ptr):
+        """Create a new ObjCInstance or return a previously created one
+        for the given object_ptr which should be an Objective-C id."""
+        # Make sure that object_ptr is wrapped in a c_void_p.
+        if not isinstance(object_ptr, c_void_p):
+            object_ptr = c_void_p(object_ptr)
+        
+        # Check if we've already created an python ObjCInstance for this
+        # object_ptr id and if so, then return it.
+        if object_ptr.value in cls._cached_objects:
+            return cls._cached_objects[object_ptr.value]
+
+        # Otherwise, create a new ObjCInstance.
+        objc_instance = super(ObjCInstance, cls).__new__(cls)
+        objc_instance.ptr = object_ptr
+        objc_instance._as_parameter = object_ptr
+        # Determine class of this object.
+        class_ptr = c_void_p(objc.object_getClass(object_ptr))
+        objc_instance.objc_class = ObjCClass(class_ptr)
+
+        # Store new object in the dictionary of cached objects, keyed
+        # by the (integer) memory address pointed to by the object_ptr.
+        cls._cached_objects[object_ptr.value] = objc_instance
+
+        return objc_instance
+
+    def __repr__(self):
+        return "<ObjCInstance: %s at %s>" % (self.objc_class.name, str(self.ptr.value))
+
+    def __getattr__(self, name):
+        """Returns a callable method object with the given name."""
+        # Search for named instance method in the class object and if it
+        # exists, return callable object with self.ptr as hidden argument.
+        method = self.objc_class.get_instance_method(name)
+        if method:
+            return ObjCBoundMethod(method, self.ptr)
+        # Else, search for class method with given name in the class object.
+        # If it exists, return callable object with a pointer to the class 
+        # as a hidden argument.
+        method = self.objc_class.get_class_method(name)
+        if method:
+            return ObjCBoundMethod(method, self.objc_class.ptr)
+        # Otherwise raise an exception.
+        raise AttributeError('ObjCInstance %s has no attribute %s' % (self.objc_class.name, name))
+
+######################################################################
+
+# ObjCSubclass is used to define an Objective-C subclass of an existing
+# class registered with the runtime.  When you create an instance of
+# ObjCSubclass, it registers the new subclass with the Objective-C
+# runtime and creates a set of function decorators that you can use to
+# add instance methods or class methods to the subclass.
+#
+# Typical usage would be to first create and register the subclass:
+#
+#     MySubclass = ObjCSubclass('MySubclassName', 'NSObject')
+#
+# then add methods with:
+#
+#     @MySubclass.method('v')
+#     def methodThatReturnsVoid(self):
+#         pass
+#
+#     @MySubclass.method('Bi')
+#     def boolReturningMethodWithInt_(self, x):
+#         return True
+#
+#     @MySubclass.classmethod('@')
+#     def classMethodThatReturnsId(self):
+#         return self
+#
+# It is probably a good idea to organize the code related to a single
+# subclass by either putting it in its own module (note that you don't
+# actually need to expose any of the method names or the ObjCSubclass)
+# or by bundling it all up inside a python class definition, perhaps
+# called MySubclassImplementation.
+#
+# It is also possible to add Objective-C ivars to the subclass, however
+# if you do so, you must call the __init__ method with register=False,
+# and then call the register method after the ivars have been added.
+# But rather than creating the ivars in Objective-C land, it is easier
+# to just define python-based instance variables in your subclass's init
+# method.
+# 
+# This class is used only to *define* the interface and implementation
+# of an Objective-C subclass from python.  It should not be used in
+# any other way.  If you want a python representation of the resulting
+# class, create it with ObjCClass.
+#
+# Instances are created as a pointer to the objc object by using:
+#
+#     myinstance = send_message('MySubclassName', 'alloc')
+#     myinstance = send_message(myinstance, 'init')
+#
+# or wrapped inside an ObjCInstance object by using:
+#
+#     myclass = ObjCClass('MySubclassName')
+#     myinstance = myclass.alloc().init()
+#
 class ObjCSubclass(object):
-
-    def __init__(self, superclass, name):
-        class PythonSelf(object):
-            def __init__(self, objc_self):
-                self.objc_self = objc_self
-                # _as_parameter_ is used if this is passed as an argument
-                # and argtypes not set.
-                self._as_parameter_ = c_void_p(objc_self)
-            def from_param(self):
-                # Only called when PythonSelf is given as argtypes
-                return c_void_p(self.objc_self)
-        self.PythonSelf = PythonSelf
-
-        self._object_table = {}
+    """Use this to create a subclass of an existing Objective-C class.
+    It consists primarily of function decorators which you use to add methods
+    to the subclass."""
+    def __init__(self, superclass, name, register=True):
         self._imp_table = {}
         self.name = name
         self.objc_cls = create_subclass(superclass, name)
         self._as_parameter_ = self.objc_cls
-        self.register()
+        if register:
+            self.register()
         self.objc_metaclass = get_metaclass(name)
 
     def register(self):
-        register_subclass(self.objc_cls)
+        objc.objc_registerClassPair(self.objc_cls)
 
     def add_ivar(self, varname, vartype):
-        add_ivar(self.objc_cls, varname, vartype)
+        return add_ivar(self.objc_cls, varname, vartype)
 
     def add_method(self, method, name, encoding):
         imp = add_method(self.objc_cls, name, method, encoding)
@@ -770,300 +959,34 @@ class ObjCSubclass(object):
     def add_class_method(self, method, name, encoding):
         imp = add_method(self.objc_metaclass, name, method, encoding)
         self._imp_table[name] = imp
-        
-    def get_python_self_for_instance(self, objc_self):
-        if isinstance(objc_self, c_void_p):
-            objc_self = objc_self.value
-        if objc_self in self._object_table:
-            py_self = self._object_table[objc_self]
-        else:
-            py_self = self.PythonSelf(objc_self)
-            self._object_table[objc_self] = py_self
-        return py_self
-
-    def delete_python_self(self, py_self):
-        key = py_self.objc_self
-        if hasattr(key, 'value'):
-            key = key.value
-        if key in self._object_table:
-            del self._object_table[key]
-        py_self.objc_self = None
-        
+    
     def method(self, encoding):
         """Function decorator for instance methods."""
         # Add encodings for hidden self and cmd arguments.
         encoding = encoding[0] + '@:' + encoding[1:]
         def decorator(f):
             def objc_method(objc_self, objc_cmd, *args):
-                py_self = self.get_python_self_for_instance(objc_self)
+                py_self = ObjCInstance(objc_self)
+                py_self.objc_self = objc_self
                 py_self.objc_cmd = objc_cmd
                 result = f(py_self, *args)
-                py_self.objc_self = objc_self   # restore in case accidentally changed
                 return result
             name = f.func_name.replace('_', ':')
             self.add_method(objc_method, name, encoding)
             return objc_method
         return decorator
-
+    
     def classmethod(self, encoding):
         """Function decorator for class methods."""
         # Add encodings for hidden self and cmd arguments.
         encoding = encoding[0] + '@:' + encoding[1:]
         def decorator(f):
             def objc_class_method(objc_cls, objc_cmd, *args):
-                self.objc_cmd = objc_cmd
-                return f(self, *args)
+                py_cls = ObjCClass(objc_cls)
+                py_cls.objc_cmd = objc_cmd
+                return f(py_cls, *args)
             name = f.func_name.replace('_', ':')
             self.add_class_method(objc_class_method, name, encoding)
             return objc_class_method
         return decorator
 
-    def initmethod(self, encoding):
-        """Function decorator for instance initializer method."""
-        # Add encodings for hidden self and cmd arguments.
-        encoding = encoding[0] + '@:' + encoding[1:]
-        def decorator(f):
-            def objc_init_method(objc_self, objc_cmd, *args):
-                py_self = self.get_python_self_for_instance(objc_self)
-                py_self.objc_cmd = objc_cmd
-                result = f(py_self, *args)
-                if isinstance(result, self.PythonSelf):
-                    result = result.objc_self
-                if isinstance(result, c_void_p):
-                    result = result.value
-                # Check if the value of objc_self was changed.
-                if result != objc_self:
-                    # Update entry in object_table.
-                    del self._object_table[objc_self]
-                    self._object_table[result] = py_self
-                return result
-            name = f.func_name.replace('_', ':')
-            self.add_method(objc_init_method, name, encoding)
-            return objc_init_method
-        return decorator
-
-    # Your subclass MUST define a dealloc method, otherwise the
-    # association PythonSelf object won't get deleted.
-    def dealloc(self, f):
-        """Function decorator for dealloc method."""
-        def objc_method(objc_self, objc_cmd):
-            py_self = self.get_python_self_for_instance(objc_self)
-            py_self.objc_cmd = objc_cmd
-            f(py_self)
-            self.delete_python_self(py_self)
-        self.add_method(objc_method, 'dealloc', 'v@:')
-        return objc_method        
-
-    def pythonmethod(self, f):
-        """Function decorator for python-callable methods."""
-        setattr(self.PythonSelf, f.func_name, f)
-        return f
-
-######################################################################
-
-# Even though we don't use this directly, it must be loaded so that
-# we can find the NSApplication, NSWindow, and NSView classes.
-appkit = cdll.LoadLibrary(util.find_library('AppKit'))
-
-NSDefaultRunLoopMode = c_void_p.in_dll(appkit, 'NSDefaultRunLoopMode')
-NSEventTrackingRunLoopMode = c_void_p.in_dll(appkit, 'NSEventTrackingRunLoopMode')
-
-# /System/Library/Frameworks/AppKit.framework/Headers/NSEvent.h
-NSAnyEventMask = 0xFFFFFFFFL     # NSUIntegerMax
-
-NSKeyDown            = 10
-NSKeyUp              = 11
-NSFlagsChanged       = 12
-NSApplicationDefined = 15
-
-NSAlphaShiftKeyMask         = 1 << 16
-NSShiftKeyMask              = 1 << 17
-NSControlKeyMask            = 1 << 18
-NSAlternateKeyMask          = 1 << 19
-NSCommandKeyMask            = 1 << 20
-NSNumericPadKeyMask         = 1 << 21
-NSHelpKeyMask               = 1 << 22
-NSFunctionKeyMask           = 1 << 23
-
-NSInsertFunctionKey   = 0xF727
-NSDeleteFunctionKey   = 0xF728
-NSHomeFunctionKey     = 0xF729
-NSBeginFunctionKey    = 0xF72A
-NSEndFunctionKey      = 0xF72B
-NSPageUpFunctionKey   = 0xF72C
-NSPageDownFunctionKey = 0xF72D
-
-# /System/Library/Frameworks/AppKit.framework/Headers/NSWindow.h
-NSBorderlessWindowMask		= 0
-NSTitledWindowMask		= 1 << 0
-NSClosableWindowMask		= 1 << 1
-NSMiniaturizableWindowMask	= 1 << 2
-NSResizableWindowMask		= 1 << 3
-
-# /System/Library/Frameworks/AppKit.framework/Headers/NSPanel.h
-NSUtilityWindowMask		= 1 << 4
-
-# /System/Library/Frameworks/AppKit.framework/Headers/NSGraphics.h
-NSBackingStoreRetained	        = 0
-NSBackingStoreNonretained	= 1
-NSBackingStoreBuffered	        = 2
-
-# /System/Library/Frameworks/AppKit.framework/Headers/NSTrackingArea.h
-NSTrackingMouseEnteredAndExited  = 0x01
-NSTrackingMouseMoved             = 0x02
-NSTrackingCursorUpdate 		 = 0x04
-NSTrackingActiveInActiveApp 	 = 0x40
-
-# /System/Library/Frameworks/AppKit.framework/Headers/NSOpenGL.h
-NSOpenGLPFAAllRenderers       =   1   # choose from all available renderers          
-NSOpenGLPFADoubleBuffer       =   5   # choose a double buffered pixel format        
-NSOpenGLPFAStereo             =   6   # stereo buffering supported                   
-NSOpenGLPFAAuxBuffers         =   7   # number of aux buffers                        
-NSOpenGLPFAColorSize          =   8   # number of color buffer bits                  
-NSOpenGLPFAAlphaSize          =  11   # number of alpha component bits               
-NSOpenGLPFADepthSize          =  12   # number of depth buffer bits                  
-NSOpenGLPFAStencilSize        =  13   # number of stencil buffer bits                
-NSOpenGLPFAAccumSize          =  14   # number of accum buffer bits                  
-NSOpenGLPFAMinimumPolicy      =  51   # never choose smaller buffers than requested  
-NSOpenGLPFAMaximumPolicy      =  52   # choose largest buffers of type requested     
-NSOpenGLPFAOffScreen          =  53   # choose an off-screen capable renderer        
-NSOpenGLPFAFullScreen         =  54   # choose a full-screen capable renderer        
-NSOpenGLPFASampleBuffers      =  55   # number of multi sample buffers               
-NSOpenGLPFASamples            =  56   # number of samples per multi sample buffer    
-NSOpenGLPFAAuxDepthStencil    =  57   # each aux buffer has its own depth stencil    
-NSOpenGLPFAColorFloat         =  58   # color buffers store floating point pixels    
-NSOpenGLPFAMultisample        =  59   # choose multisampling                         
-NSOpenGLPFASupersample        =  60   # choose supersampling                         
-NSOpenGLPFASampleAlpha        =  61   # request alpha filtering                      
-NSOpenGLPFARendererID         =  70   # request renderer by ID                       
-NSOpenGLPFASingleRenderer     =  71   # choose a single renderer for all screens     
-NSOpenGLPFANoRecovery         =  72   # disable all failure recovery systems         
-NSOpenGLPFAAccelerated        =  73   # choose a hardware accelerated renderer       
-NSOpenGLPFAClosestPolicy      =  74   # choose the closest color buffer to request   
-NSOpenGLPFARobust             =  75   # renderer does not need failure recovery      
-NSOpenGLPFABackingStore       =  76   # back buffer contents are valid after swap    
-NSOpenGLPFAMPSafe             =  78   # renderer is multi-processor safe             
-NSOpenGLPFAWindow             =  80   # can be used to render to an onscreen window  
-NSOpenGLPFAMultiScreen        =  81   # single window can span multiple screens      
-NSOpenGLPFACompliant          =  83   # renderer is opengl compliant                 
-NSOpenGLPFAScreenMask         =  84   # bit mask of supported physical screens       
-NSOpenGLPFAPixelBuffer        =  90   # can be used to render to a pbuffer           
-NSOpenGLPFARemotePixelBuffer  =  91   # can be used to render offline to a pbuffer   
-NSOpenGLPFAAllowOfflineRenderers = 96 # allow use of offline renderers               
-NSOpenGLPFAAcceleratedCompute =  97   # choose a hardware accelerated compute device 
-NSOpenGLPFAVirtualScreenCount = 128   # number of virtual screens in this format     
-
-NSOpenGLCPSwapInterval        = 222
-
-
-# /System/Library/Frameworks/ApplicationServices.framework/Frameworks/...
-#     CoreGraphics.framework/Headers/CGImage.h
-kCGImageAlphaNone                   = 0
-kCGImageAlphaPremultipliedLast      = 1
-kCGImageAlphaPremultipliedFirst     = 2
-kCGImageAlphaLast                   = 3
-kCGImageAlphaFirst                  = 4
-kCGImageAlphaNoneSkipLast           = 5
-kCGImageAlphaNoneSkipFirst          = 6
-kCGImageAlphaOnly                   = 7
-
-kCGBitmapAlphaInfoMask              = 0x1F
-kCGBitmapFloatComponents            = 1 << 8
-
-kCGBitmapByteOrderMask              = 0x7000
-kCGBitmapByteOrderDefault           = 0 << 12
-kCGBitmapByteOrder16Little          = 1 << 12
-kCGBitmapByteOrder32Little          = 2 << 12
-kCGBitmapByteOrder16Big             = 3 << 12
-kCGBitmapByteOrder32Big             = 4 << 12
-
-# NSApplication.h
-NSApplicationPresentationDefault = 0
-NSApplicationPresentationHideDock = 1 << 1
-NSApplicationPresentationHideMenuBar = 1 << 3
-NSApplicationPresentationDisableProcessSwitching = 1 << 5
-NSApplicationPresentationDisableHideApplication = 1 << 8
-
-######################################################################
-
-quartz = cdll.LoadLibrary(util.find_library('quartz'))
-
-CGDirectDisplayID = c_uint32     # CGDirectDisplay.h
-CGError = c_int32                # CGError.h
-
-# /System/Library/Frameworks/ApplicationServices.framework/Frameworks/...
-#     ImageIO.framework/Headers/CGImageProperties.h
-kCGImagePropertyGIFDictionary = c_void_p.in_dll(quartz, 'kCGImagePropertyGIFDictionary')
-kCGImagePropertyGIFDelayTime = c_void_p.in_dll(quartz, 'kCGImagePropertyGIFDelayTime')
-
-# /System/Library/Frameworks/ApplicationServices.framework/Frameworks/...
-#     CoreGraphics.framework/Headers/CGColorSpace.h
-kCGRenderingIntentDefault = 0
-
-quartz.CGDisplayIDToOpenGLDisplayMask.restype = c_uint32
-quartz.CGDisplayIDToOpenGLDisplayMask.argtypes = [c_uint32]
-
-quartz.CGMainDisplayID.restype = c_uint32
-
-quartz.CGShieldingWindowLevel.restype = c_int32
-
-quartz.CGCursorIsVisible.restype = c_bool
-
-quartz.CGDisplayCopyAllDisplayModes.restype = c_void_p
-quartz.CGDisplayCopyAllDisplayModes.argtypes = [CGDirectDisplayID, c_void_p]
-
-quartz.CGDisplayModeGetRefreshRate.restype = c_double
-quartz.CGDisplayModeGetRefreshRate.argtypes = [c_void_p]
-
-quartz.CGDisplayModeCopyPixelEncoding.restype = c_void_p
-quartz.CGDisplayModeCopyPixelEncoding.argtypes = [c_void_p]
-
-quartz.CGGetActiveDisplayList.restype = CGError
-quartz.CGGetActiveDisplayList.argtypes = [c_uint32, POINTER(CGDirectDisplayID), POINTER(c_uint32)]
-
-quartz.CGDisplayBounds.restype = CGRect
-quartz.CGDisplayBounds.argtypes = [CGDirectDisplayID]
-
-quartz.CGImageSourceCreateWithData.restype = c_void_p
-quartz.CGImageSourceCreateWithData.argtypes = [c_void_p, c_void_p]
-
-quartz.CGImageSourceCreateImageAtIndex.restype = c_void_p
-quartz.CGImageSourceCreateImageAtIndex.argtypes = [c_void_p, c_size_t, c_void_p]
-
-quartz.CGImageSourceCopyPropertiesAtIndex.restype = c_void_p
-quartz.CGImageSourceCopyPropertiesAtIndex.argtypes = [c_void_p, c_size_t, c_void_p]
-
-quartz.CGImageGetDataProvider.restype = c_void_p
-quartz.CGImageGetDataProvider.argtypes = [c_void_p]
-
-quartz.CGDataProviderCopyData.restype = c_void_p
-quartz.CGDataProviderCopyData.argtypes = [c_void_p]
-
-quartz.CGDataProviderCreateWithCFData.restype = c_void_p
-quartz.CGDataProviderCreateWithCFData.argtypes = [c_void_p]
-
-quartz.CGImageCreate.restype = c_void_p
-quartz.CGImageCreate.argtypes = [c_size_t, c_size_t, c_size_t, c_size_t, c_size_t, c_void_p, c_uint32, c_void_p, c_void_p, c_bool, c_int]
-
-quartz.CGColorSpaceCreateDeviceRGB.restype = c_void_p
-
-quartz.CGDataProviderRelease.restype = None
-quartz.CGDataProviderRelease.argtypes = [c_void_p]
-
-quartz.CGColorSpaceRelease.restype = None
-quartz.CGColorSpaceRelease.argtypes = [c_void_p]
-
-quartz.CGWarpMouseCursorPosition.restype = CGError
-quartz.CGWarpMouseCursorPosition.argtypes = [CGPoint]
-
-quartz.CGDisplayMoveCursorToPoint.restype = CGError
-quartz.CGDisplayMoveCursorToPoint.argtypes = [CGDirectDisplayID, CGPoint]
-
-quartz.CGAssociateMouseAndMouseCursorPosition.restype = CGError
-quartz.CGAssociateMouseAndMouseCursorPosition.argtypes = [c_bool]
-
-######################################################################
-
-foundation = cdll.LoadLibrary(util.find_library('Foundation'))
-foundation.NSMouseInRect.restype = c_bool
-foundation.NSMouseInRect.argtypes = [NSPoint, NSRect, c_bool]

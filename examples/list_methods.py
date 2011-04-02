@@ -1,6 +1,6 @@
 # List all the methods of an Objective-C class.
 
-from objc_runtime import *
+from cocoapy.runtime import *
 
 def list_methods(cls):
     count = c_uint()

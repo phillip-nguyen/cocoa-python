@@ -1,6 +1,6 @@
 # Print out the inheritance chain for a given class.
 
-from objc_runtime import *
+from cocoapy.runtime import *
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
