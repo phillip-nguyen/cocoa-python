@@ -1,52 +1,55 @@
 # Example of using ctypes with Cocoa to create an NSWindow with
 # an application menu item for quitting.
 
+import sys
 from cocoapy import *
+
+NSWindow = ObjCClass('NSWindow')
+NSApplication = ObjCClass('NSApplication')
+NSMenu = ObjCClass('NSMenu')
+NSMenuItem = ObjCClass('NSMenuItem')
+NSAutoreleasePool = ObjCClass('NSAutoreleasePool')
 
 def create_window():
     print 'creating window'
-    window = send_message('NSWindow', 'alloc')
     frame = NSMakeRect(100, 100, 300, 300)
-    window = send_message(window, 'initWithContentRect:styleMask:backing:defer:',
-                          frame,
-                          NSTitledWindowMask | NSClosableWindowMask | NSMiniaturizableWindowMask | NSResizableWindowMask,
-                          NSBackingStoreBuffered,
-                          0)
-    send_message(window, 'setTitle:', get_NSString("My Awesome Window"))
-    send_message(window, 'makeKeyAndOrderFront:', None)
+    window = NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
+        frame,
+        NSTitledWindowMask | NSClosableWindowMask | NSMiniaturizableWindowMask | NSResizableWindowMask,
+        NSBackingStoreBuffered,
+        0)
+    window.setTitle_(get_NSString("My Awesome Window"))
+    window.makeKeyAndOrderFront_(None)
     return window
 
 def create_menu():
-    nsapp = send_message('NSApplication', 'sharedApplication')
-    menubar = send_message(send_message('NSMenu', 'alloc'), 'init')
-    appMenuItem = send_message(send_message('NSMenuItem', 'alloc'), 'init')
-    send_message(menubar, 'addItem:', appMenuItem)
-    send_message(nsapp, 'setMainMenu:', menubar)
-    appMenu = send_message(send_message('NSMenu', 'alloc'), 'init')
+    nsapp = NSApplication.sharedApplication()
+    menubar = NSMenu.alloc().init()
+    appMenuItem = NSMenuItem.alloc().init()
+    menubar.addItem_(appMenuItem)
+    nsapp.setMainMenu_(menubar)
+    appMenu = NSMenu.alloc().init()
 
-    quitItem = send_message('NSMenuItem', 'alloc')
-    send_message(quitItem, 'initWithTitle:action:keyEquivalent:',
-                 get_NSString('Quit'), get_selector('terminate:'), get_NSString('q'))
-    send_message(appMenu, 'addItem:', quitItem)
+    quitItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        get_NSString('Quit ' + sys.argv[0]), get_selector('terminate:'), get_NSString('q'))
+    appMenu.addItem_(quitItem)
 
-    hideItem = send_message('NSMenuItem', 'alloc')
-    send_message(hideItem, 'initWithTitle:action:keyEquivalent:',
-                 get_NSString('Hide'), get_selector('hide:'), get_NSString('h'))
-    send_message(appMenu, 'addItem:', hideItem)
+    hideItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
+        get_NSString('Hide ' + sys.argv[0]), get_selector('hide:'), get_NSString('h'))
+    appMenu.addItem_(hideItem)
 
-    send_message(appMenuItem, 'setSubmenu:', appMenu)
+    appMenuItem.setSubmenu_(appMenu)
 
 def create_autorelease_pool():
-    pool = send_message('NSAutoreleasePool', 'alloc')
-    pool = send_message(pool, 'init')
+    pool = NSAutoreleasePool.alloc().init()
     return pool
 
 def application_run():
-    app = send_message('NSApplication', 'sharedApplication')
+    app = NSApplication.sharedApplication()
     create_autorelease_pool()
     create_window()
     create_menu()
-    send_message(app, 'run')  # never returns
+    app.run()  # never returns
 
 ######################################################################
 
