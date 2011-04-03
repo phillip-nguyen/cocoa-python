@@ -620,7 +620,7 @@ class ObjCMethod(object):
         self.encoding = objc.method_getTypeEncoding(method)
         self.return_type = objc.method_copyReturnType(method)
         self.nargs = objc.method_getNumberOfArguments(method)
-        self.imp = objc.method_getImplementation(method)
+        self.imp = c_void_p(objc.method_getImplementation(method))
         self.argument_types = []
         for i in range(self.nargs):
             buffer = c_buffer(512)
@@ -659,7 +659,14 @@ class ObjCMethod(object):
         
     def get_prototype(self):
         """Returns a ctypes CFUNCTYPE for the method."""
-        self.prototype = CFUNCTYPE(self.restype, *self.argtypes)
+        if self.restype == ObjCInstance or self.restype == ObjCClass:
+            # Some hacky stuff to get around ctypes issues on 64-bit.  Can't let
+            # ctypes convert the return value itself, because it truncates the pointer
+            # along the way.  So instead, we must do set the return type to c_void_p to 
+            # ensure we get 64-bit addresses and then convert the return value manually.
+            self.prototype = CFUNCTYPE(c_void_p, *self.argtypes)
+        else:
+            self.prototype = CFUNCTYPE(self.restype, *self.argtypes)
         return self.prototype
     
     def __repr__(self):
@@ -669,8 +676,11 @@ class ObjCMethod(object):
         """Returns a python-callable version of the method's IMP."""
         if not self.func:
             prototype = self.get_prototype()
-            self.func = prototype(self.imp)
-            self.func.restype = self.restype
+            self.func = cast(self.imp, prototype)
+            if self.restype == ObjCInstance or self.restype == ObjCClass:
+                self.func.restype = c_void_p
+            else:
+                self.func.restype = self.restype
             self.func.argtypes = self.argtypes
         return self.func
    
@@ -680,7 +690,13 @@ class ObjCMethod(object):
         provided."""
         f = self.get_callable()
         try:
-            return f(objc_id, self.selector, *args)
+            result = f(objc_id, self.selector, *args)
+            # Convert result to python type if it is a instance or class pointer.
+            if self.restype == ObjCInstance:
+                result = ObjCInstance(result)
+            elif self.restype == ObjCClass:
+                result = ObjCClass(result)
+            return result
         except ArgumentError as error:
             # Add more useful info to argument error exceptions, then reraise.
             error.args += ('selector = ' + self.name,
