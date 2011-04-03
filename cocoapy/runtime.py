@@ -683,9 +683,9 @@ class ObjCMethod(object):
             return f(objc_id, self.selector, *args)
         except ArgumentError as error:
             # Add more useful info to argument error exceptions, then reraise.
-            error.args += ('selector: ' + self.name,
-                           'argtypes: ' + str(self.argtypes),
-                           'encoding: ' + self.encoding)
+            error.args += ('selector = ' + self.name,
+                           'argtypes =' + str(self.argtypes),
+                           'encoding = ' + self.encoding)
             raise
 
 ######################################################################
@@ -848,7 +848,7 @@ class ObjCInstance(object):
         # Otherwise, create a new ObjCInstance.
         objc_instance = super(ObjCInstance, cls).__new__(cls)
         objc_instance.ptr = object_ptr
-        objc_instance._as_parameter = object_ptr
+        objc_instance._as_parameter_ = object_ptr
         # Determine class of this object.
         class_ptr = c_void_p(objc.object_getClass(object_ptr))
         objc_instance.objc_class = ObjCClass(class_ptr)
