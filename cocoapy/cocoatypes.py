@@ -4,11 +4,13 @@ import sys, platform
 __LP64__ = (sys.maxint > 2**32)
 __i386__ = (platform.machine() == 'i386')
 
+PyObjectEncoding = '{PyObject=@}'
+
 def encoding_for_ctype(vartype):
     typecodes = {c_char:'c', c_int:'i', c_short:'s', c_long:'l', c_longlong:'q',
                  c_ubyte:'C', c_uint:'I', c_ushort:'S', c_ulong:'L', c_ulonglong:'Q',
                  c_float:'f', c_double:'d', c_bool:'B', c_char_p:'*', c_void_p:'@',
-                 py_object:'@'}
+                 py_object:PyObjectEncoding}
     return typecodes.get(vartype, '?')
 
 # Note CGBase.h located at

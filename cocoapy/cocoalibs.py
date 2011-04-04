@@ -1,7 +1,7 @@
 from ctypes import *
 from ctypes import util
 
-from runtime import send_message
+from runtime import send_message, ObjCInstance
 from cocoatypes import *
 
 ######################################################################
@@ -30,8 +30,8 @@ cf.CFStringGetCString.restype = c_bool
 cf.CFStringGetCString.argtypes = [c_void_p, c_char_p, CFIndex, CFStringEncoding]
 
 def CFSTR(string):
-    return c_void_p(cf.CFStringCreateWithCString(
-            None, string.encode('utf8'), kCFStringEncodingUTF8))
+    return ObjCInstance(c_void_p(cf.CFStringCreateWithCString(
+            None, string.encode('utf8'), kCFStringEncodingUTF8)))
 
 # Other possible names for this method:
 # at, ampersat, arobe, apenstaartje (little monkey tail), strudel,
@@ -40,7 +40,7 @@ def CFSTR(string):
 # kukac (caterpillar).
 def get_NSString(string):
     """Autoreleased version of CFSTR"""
-    return send_message(CFSTR(string), 'autorelease')
+    return CFSTR(string).autorelease()
 
 def cfstring_to_string(cfstring):
     length = cf.CFStringGetLength(cfstring)
@@ -81,6 +81,8 @@ appkit = cdll.LoadLibrary(util.find_library('AppKit'))
 
 NSDefaultRunLoopMode = c_void_p.in_dll(appkit, 'NSDefaultRunLoopMode')
 NSEventTrackingRunLoopMode = c_void_p.in_dll(appkit, 'NSEventTrackingRunLoopMode')
+NSApplicationDidHideNotification = c_void_p.in_dll(appkit, 'NSApplicationDidHideNotification')
+NSApplicationDidUnhideNotification = c_void_p.in_dll(appkit, 'NSApplicationDidUnhideNotification')
 
 # /System/Library/Frameworks/AppKit.framework/Headers/NSEvent.h
 NSAnyEventMask = 0xFFFFFFFFL     # NSUIntegerMax

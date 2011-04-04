@@ -34,6 +34,8 @@ def create_menu():
         get_NSString('Quit ' + sys.argv[0]), get_selector('terminate:'), get_NSString('q'))
     appMenu.addItem_(quitItem)
 
+    appMenu.addItem_(NSMenuItem.separatorItem())
+
     hideItem = NSMenuItem.alloc().initWithTitle_action_keyEquivalent_(
         get_NSString('Hide ' + sys.argv[0]), get_selector('hide:'), get_NSString('h'))
     appMenu.addItem_(hideItem)

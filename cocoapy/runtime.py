@@ -528,7 +528,7 @@ def cfunctype_for_encoding(encoding):
                  'C':c_ubyte, 'I':c_uint, 'S':c_ushort, 'L':c_ulong, 'Q':c_ulonglong, 
                  'f':c_float, 'd':c_double, 'B':c_bool, 'v':None, '*':c_char_p,
                  '@':c_void_p, '#':c_void_p, ':':c_void_p, NSPointEncoding:NSPoint,
-                 NSSizeEncoding:NSSize, NSRectEncoding:NSRect}
+                 NSSizeEncoding:NSSize, NSRectEncoding:NSRect, PyObjectEncoding:py_object}
     argtypes = []
     pointer = False
     for token in tokenize_encoding(encoding):
@@ -592,9 +592,6 @@ def get_instance_variable(obj, varname, vartype):
     objc.object_getInstanceVariable(obj, varname, byref(variable))
     return variable.value
 
-def cast_to_pyobject(obj):
-    return cast(obj, py_object).value
-
 ######################################################################
 
 class ObjCMethod(object):
@@ -607,7 +604,8 @@ class ObjCMethod(object):
                  'C':c_ubyte, 'I':c_uint, 'S':c_ushort, 'L':c_ulong, 'Q':c_ulonglong, 
                  'f':c_float, 'd':c_double, 'B':c_bool, 'v':None, 'Vv':None, '*':c_char_p,
                  '@':c_void_p, '#':c_void_p, ':':c_void_p, '^v':c_void_p, 
-                 NSPointEncoding:NSPoint, NSSizeEncoding:NSSize, NSRectEncoding:NSRect}
+                 NSPointEncoding:NSPoint, NSSizeEncoding:NSSize, NSRectEncoding:NSRect,
+                 PyObjectEncoding:py_object}
 
     cfunctype_table = {}
     
@@ -711,7 +709,7 @@ class ObjCBoundMethod(object):
     to some id which will be passed as the first parameter to the method."""
 
     def __init__(self, method, objc_id):
-        """Initialize with a method and Objective-C id (class or object)."""
+        """Initialize with a method and ObjCInstance or ObjCClass object."""
         self.method = method
         self.objc_id = objc_id
 
@@ -848,6 +846,7 @@ class ObjCInstance(object):
     """Python wrapper for an Objective-C instance."""
 
     _cached_objects = weakref.WeakValueDictionary()
+    _method_returns = {}
 
     def __new__(cls, object_ptr):
         """Create a new ObjCInstance or return a previously created one
@@ -856,6 +855,19 @@ class ObjCInstance(object):
         if not isinstance(object_ptr, c_void_p):
             object_ptr = c_void_p(object_ptr)
         
+        # If given a nil pointer, return None.
+        if not object_ptr.value:
+            return None
+
+        # Check if this is an Objective-C method return first.
+        # If it is, move the object from the _method_returns dictionary
+        # where we were keeping it alive, to the weakref-ed 
+        # _cached_objects dictionary.
+        if object_ptr.value in cls._method_returns:
+            objc_instance = cls._method_returns.pop(object_ptr.value)
+            cls._cached_objects[object_ptr.value] = objc_instance
+            return objc_instance
+
         # Check if we've already created an python ObjCInstance for this
         # object_ptr id and if so, then return it.
         if object_ptr.value in cls._cached_objects:
@@ -876,15 +888,19 @@ class ObjCInstance(object):
         return objc_instance
 
     def __repr__(self):
-        return "<ObjCInstance: %s at %s>" % (self.objc_class.name, str(self.ptr.value))
+        return "<ObjCInstance %#x: %s at %s>" % (id(self), self.objc_class.name, str(self.ptr.value))
 
     def __getattr__(self, name):
         """Returns a callable method object with the given name."""
         # Search for named instance method in the class object and if it
-        # exists, return callable object with self.ptr as hidden argument.
+        # exists, return callable object with self as hidden argument.
+        # Note: you should give self and not self.ptr as a parameter to 
+        # ObjCBoundMethod, so that it will be able to keep the ObjCInstance
+        # alive for chained calls like MyClass.alloc().init() where the 
+        # object created by alloc() is not assigned to a variable.
         method = self.objc_class.get_instance_method(name)
         if method:
-            return ObjCBoundMethod(method, self.ptr)
+            return ObjCBoundMethod(method, self)
         # Else, search for class method with given name in the class object.
         # If it exists, return callable object with a pointer to the class 
         # as a hidden argument.
@@ -894,7 +910,31 @@ class ObjCInstance(object):
         # Otherwise raise an exception.
         raise AttributeError('ObjCInstance %s has no attribute %s' % (self.objc_class.name, name))
 
+    def returnValue(self):
+        """Used to temporarily store a strong reference to an ObjCInstance
+        object that was created inside an Objective-C method and is being
+        returned across the Objective-C / Python boundary as a pointer value."""
+        # Store object in _method_returns dictionary so that it won't be
+        # garbage collected.  The strong reference will be removed the next
+        # time its ObjCInstance is retrieved from the pointer value.
+        self._method_returns[self.ptr.value] = self
+        return self.ptr.value
+
 ######################################################################
+
+def convert_method_arguments(encoding, args):
+    """Used by ObjCSubclass to convert Objective-C method arguments to
+    Python values before passing them on to the Python-defined method."""
+    new_args = []
+    arg_encodings = tokenize_encoding(encoding)[3:]
+    for e, a in zip(arg_encodings, args):
+        if e == '@':
+            new_args.append(ObjCInstance(a))
+        elif e == '#':
+            new_args.append(ObjCClass(a))
+        else:
+            new_args.append(a)
+    return new_args
 
 # ObjCSubclass is used to define an Objective-C subclass of an existing
 # class registered with the runtime.  When you create an instance of
@@ -979,13 +1019,24 @@ class ObjCSubclass(object):
     def method(self, encoding):
         """Function decorator for instance methods."""
         # Add encodings for hidden self and cmd arguments.
+        # BUG: This doesn't work if the return encoding is not single char.
         encoding = encoding[0] + '@:' + encoding[1:]
         def decorator(f):
             def objc_method(objc_self, objc_cmd, *args):
                 py_self = ObjCInstance(objc_self)
-                py_self.objc_self = objc_self
                 py_self.objc_cmd = objc_cmd
+                args = convert_method_arguments(encoding, args)
                 result = f(py_self, *args)
+                if isinstance(result, ObjCClass):
+                    result = result.ptr
+                elif isinstance(result, ObjCInstance):
+                    # An ObjCInstance crosses over the ObjC/Python boundary as
+                    # just a pointer value.  Using the returnValue() method will
+                    # temporarily keep the object alive as it crosses the boundary
+                    # so that it will still exist as an ObjCInstance object in 
+                    # Python-land when it gets to the other side.
+                    # (Sort of like the teleporter pattern buffer in Star Trek.)
+                    result = result.returnValue()
                 return result
             name = f.func_name.replace('_', ':')
             self.add_method(objc_method, name, encoding)
@@ -1000,7 +1051,13 @@ class ObjCSubclass(object):
             def objc_class_method(objc_cls, objc_cmd, *args):
                 py_cls = ObjCClass(objc_cls)
                 py_cls.objc_cmd = objc_cmd
-                return f(py_cls, *args)
+                args = convert_method_arguments(encoding, args)
+                result = f(py_cls, *args)
+                if isinstance(result, ObjCClass):
+                    result = result.ptr
+                elif isinstance(result, ObjCInstance):
+                    result = result.returnValue()
+                return result
             name = f.func_name.replace('_', ':')
             self.add_class_method(objc_class_method, name, encoding)
             return objc_class_method
