@@ -848,6 +848,21 @@ class ObjCInstance(object):
     """Python wrapper for an Objective-C instance."""
 
     _cached_objects = weakref.WeakValueDictionary()
+    # The problem with caching the ObjCInstance objects, even with weak references, 
+    # is that sometimes the associated Objective-C object will be deallocated outside 
+    # of cocoapy's knowledge, and then we're left hanging on to an invalid pointer
+    # (which might later point to another totally different object). 
+
+    # Ideally, we'd have a way of knowing when an Objective-C object is deallocated, 
+    # so that we could then remove it from the cache.  One possible way of doing this
+    # is to use objc_setAssociatedObject to associate an observer object to each 
+    # objective-c object that we wrap up.  When the object gets deallocated, so too 
+    # does the observer, and we have the observer perform the necessary cleanup in 
+    # its dealloc method.
+
+    # Alternative is to not cache objects at all, and prevent application code from 
+    # trying to set attributes on ObjCInstances (which wouldn't persist). 
+
     _method_returns = {}
 
     def __new__(cls, object_ptr):
@@ -946,7 +961,7 @@ def convert_method_arguments(encoding, args):
 #
 # Typical usage would be to first create and register the subclass:
 #
-#     MySubclass = ObjCSubclass('MySubclassName', 'NSObject')
+#     MySubclass = ObjCSubclass('NSObject', 'MySubclassName')
 #
 # then add methods with:
 #
