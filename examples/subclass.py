@@ -1,4 +1,3 @@
-# DEPRECATED
 # Simple example of subclassing NSObject and
 # creating objective-c callable methods using decorators.
 
