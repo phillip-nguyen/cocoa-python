@@ -527,7 +527,8 @@ def cfunctype_for_encoding(encoding):
                  'C':c_ubyte, 'I':c_uint, 'S':c_ushort, 'L':c_ulong, 'Q':c_ulonglong, 
                  'f':c_float, 'd':c_double, 'B':c_bool, 'v':None, '*':c_char_p,
                  '@':c_void_p, '#':c_void_p, ':':c_void_p, NSPointEncoding:NSPoint,
-                 NSSizeEncoding:NSSize, NSRectEncoding:NSRect, PyObjectEncoding:py_object}
+                 NSSizeEncoding:NSSize, NSRectEncoding:NSRect, NSRangeEncoding:NSRange,
+                 PyObjectEncoding:py_object}
     argtypes = []
     pointer = False
     for token in tokenize_encoding(encoding):
