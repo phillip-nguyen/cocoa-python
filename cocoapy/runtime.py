@@ -396,17 +396,24 @@ objc.sel_registerName.argtypes = [c_char_p]
 
 ######################################################################
 
+def ensure_bytes(x):
+    if isinstance(x, bytes):
+        return x
+    return x.encode('ascii')
+
+######################################################################
+
 def get_selector(name):
-    return c_void_p(objc.sel_registerName(name.encode('ascii')))
+    return c_void_p(objc.sel_registerName(ensure_bytes(name)))
 
 def get_class(name):
-    return c_void_p(objc.objc_getClass(name.encode('ascii')))
+    return c_void_p(objc.objc_getClass(ensure_bytes(name)))
 
 def get_object_class(obj):
     return c_void_p(objc.object_getClass(obj))
 
 def get_metaclass(name):
-    return c_void_p(objc.objc_getMetaClass(name.encode('ascii')))
+    return c_void_p(objc.objc_getMetaClass(ensure_bytes(name)))
 
 def get_superclass_of_object(obj):
     cls = c_void_p(objc.object_getClass(obj))
@@ -609,7 +616,7 @@ def cfunctype_for_encoding(encoding):
 def create_subclass(superclass, name):
     if isinstance(superclass, str):
         superclass = get_class(superclass)
-    return c_void_p(objc.objc_allocateClassPair(superclass, name.encode('ascii'), 0))
+    return c_void_p(objc.objc_allocateClassPair(superclass, ensure_bytes(name), 0))
 
 def register_subclass(subclass):
     objc.objc_registerClassPair(subclass)
@@ -631,15 +638,15 @@ def add_method(cls, selName, method, types):
     return imp
 
 def add_ivar(cls, name, vartype):
-    return objc.class_addIvar(cls, name.encode('ascii'), sizeof(vartype), alignment(vartype), encoding_for_ctype(vartype))
+    return objc.class_addIvar(cls, ensure_bytes(name), sizeof(vartype), alignment(vartype), encoding_for_ctype(vartype))
 
 def set_instance_variable(obj, varname, value, vartype):
     objc.object_setInstanceVariable.argtypes = [c_void_p, c_char_p, vartype]
-    objc.object_setInstanceVariable(obj, varname, value)
+    objc.object_setInstanceVariable(obj, ensure_bytes(varname), value)
     
 def get_instance_variable(obj, varname, vartype):
     variable = vartype()
-    objc.object_getInstanceVariable(obj, varname, byref(variable))
+    objc.object_getInstanceVariable(obj, ensure_bytes(varname), byref(variable))
     return variable.value
 
 ######################################################################
@@ -888,6 +895,7 @@ class ObjCClass(object):
         """Returns a callable method object with the given name."""
         # If name refers to a class method, then return a callable object
         # for the class method with self.ptr as hidden first parameter.
+        name = ensure_bytes(name)
         method = self.get_class_method(name)
         if method:
             return ObjCBoundMethod(method, self.ptr)
@@ -953,7 +961,7 @@ class ObjCInstance(object):
     def __repr__(self):
         if self.objc_class.name == b'NSCFString':
             # Display contents of NSString objects
-            from cocoalibs import cfstring_to_string
+            from .cocoalibs import cfstring_to_string
             string = cfstring_to_string(self)
             return "<ObjCInstance %#x: %s (%s) at %s>" % (id(self), self.objc_class.name, string, str(self.ptr.value))
 
@@ -967,6 +975,7 @@ class ObjCInstance(object):
         # ObjCBoundMethod, so that it will be able to keep the ObjCInstance
         # alive for chained calls like MyClass.alloc().init() where the 
         # object created by alloc() is not assigned to a variable.
+        name = ensure_bytes(name)
         method = self.objc_class.get_instance_method(name)
         if method:
             return ObjCBoundMethod(method, self)
@@ -1087,12 +1096,12 @@ class ObjCSubclass(object):
         The function must have the signature f(self, cmd, *args)
         where both self and cmd are just pointers to objc objects."""
         # Add encodings for hidden self and cmd arguments.
-        encoding = encoding.encode('ascii')
+        encoding = ensure_bytes(encoding)
         typecodes = parse_type_encoding(encoding)
         typecodes.insert(1, b'@:')
         encoding = b''.join(typecodes)
         def decorator(f):
-            name = f.func_name.replace(b'_', b':')
+            name = f.__name__.replace('_', ':')
             self.add_method(f, name, encoding)
             return f
         return decorator
@@ -1100,7 +1109,7 @@ class ObjCSubclass(object):
     def method(self, encoding):
         """Function decorator for instance methods."""
         # Add encodings for hidden self and cmd arguments.
-        encoding = encoding.encode('ascii')
+        encoding = ensure_bytes(encoding)
         typecodes = parse_type_encoding(encoding)
         typecodes.insert(1, b'@:')
         encoding = b''.join(typecodes)
@@ -1115,7 +1124,7 @@ class ObjCSubclass(object):
                 elif isinstance(result, ObjCInstance):
                     result = result.ptr.value
                 return result
-            name = f.func_name.replace(b'_', b':')
+            name = f.__name__.replace('_', ':')
             self.add_method(objc_method, name, encoding)
             return objc_method
         return decorator
@@ -1123,7 +1132,7 @@ class ObjCSubclass(object):
     def classmethod(self, encoding):
         """Function decorator for class methods."""
         # Add encodings for hidden self and cmd arguments.
-        encoding = encoding.encode('ascii')
+        encoding = ensure_bytes(encoding)
         typecodes = parse_type_encoding(encoding)
         typecodes.insert(1, b'@:')
         encoding = b''.join(typecodes)
@@ -1138,7 +1147,7 @@ class ObjCSubclass(object):
                 elif isinstance(result, ObjCInstance):
                     result = result.ptr.value
                 return result
-            name = f.func_name.replace(b'_', b':')
+            name = f.__name__.replace('_', ':')
             self.add_class_method(objc_class_method, name, encoding)
             return objc_class_method
         return decorator
