@@ -3,7 +3,7 @@
 from cocoapy import *
 
 def create_window():
-    print 'creating window'
+    print('creating window')
     window = send_message('NSWindow', 'alloc')
     frame = NSMakeRect(100, 100, 300, 300)
     window = send_message(window, 'initWithContentRect:styleMask:backing:defer:',
