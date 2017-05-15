@@ -584,7 +584,7 @@ def cfunctype_for_encoding(encoding):
         return cfunctype_table[encoding]
 
     # Otherwise, create a new CFUNCTYPE for the encoding.
-    typecodes = {b'c':c_char, b'i':c_int, b's':c_short, b'l':c_long, b'q':c_longlong, 
+    typecodes = {b'c':c_byte, b'i':c_int, b's':c_short, b'l':c_long, b'q':c_longlong, 
                  b'C':c_ubyte, b'I':c_uint, b'S':c_ushort, b'L':c_ulong, b'Q':c_ulonglong, 
                  b'f':c_float, b'd':c_double, b'B':c_bool, b'v':None, b'*':c_char_p,
                  b'@':c_void_p, b'#':c_void_p, b':':c_void_p, NSPointEncoding:NSPoint,
@@ -987,6 +987,9 @@ class ObjCInstance(object):
             return ObjCBoundMethod(method, self.objc_class.ptr)
         # Otherwise raise an exception.
         raise AttributeError('ObjCInstance %s has no attribute %s' % (self.objc_class.name, name))
+
+    def set_instance_variable(self, varname, value, vartype):
+        set_instance_variable(self.ptr, varname, value, vartype)
 
 ######################################################################
 
