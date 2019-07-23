@@ -11,14 +11,14 @@ class ObjCMethod(object):
     # Note, need to map 'c' to c_byte rather than c_char, because otherwise
     # ctypes converts the value into a one-character string which is generally
     # not what we want at all, especially when the 'c' represents a bool var.
-    typecodes = {'c':c_byte, 'i':c_int, 's':c_short, 'l':c_long, 'q':c_longlong, 
-                 'C':c_ubyte, 'I':c_uint, 'S':c_ushort, 'L':c_ulong, 'Q':c_ulonglong, 
+    typecodes = {'c':c_byte, 'i':c_int, 's':c_short, 'l':c_long, 'q':c_longlong,
+                 'C':c_ubyte, 'I':c_uint, 'S':c_ushort, 'L':c_ulong, 'Q':c_ulonglong,
                  'f':c_float, 'd':c_double, 'B':c_bool, 'v':None, 'Vv':None, '*':c_char_p,
-                 '@':c_void_p, '#':c_void_p, ':':c_void_p, '^v':c_void_p, 
+                 '@':c_void_p, '#':c_void_p, ':':c_void_p, '^v':c_void_p,
                  NSPointEncoding:NSPoint, NSSizeEncoding:NSSize, NSRectEncoding:NSRect}
 
     cfunctype_table = {}
-    
+
     def __init__(self, method):
         """Initialize with an Objective-C Method pointer.  We then determine
         the return type and argument type information of the method."""
@@ -64,12 +64,12 @@ class ObjCMethod(object):
             return self.typecodes[encoding[1:]]
         else:
             raise Exception('unknown encoding for %s: %s' % (self.name, encoding))
-        
+
     def get_prototype(self):
         """Returns a ctypes CFUNCTYPE for the method."""
         self.prototype = CFUNCTYPE(self.restype, *self.argtypes)
         return self.prototype
-    
+
     def __repr__(self):
         return "<ObjCMethod: %s %s>" % (self.name, self.encoding)
 
@@ -81,10 +81,10 @@ class ObjCMethod(object):
             self.func.restype = self.restype
             self.func.argtypes = self.argtypes
         return self.func
-   
+
     def __call__(self, objc_id, *args):
         """Call the method with the given id and arguments.  You do not need
-        to pass in the selector as an argument since it will be automatically 
+        to pass in the selector as an argument since it will be automatically
         provided."""
         f = self.get_callable()
         try:
@@ -99,7 +99,7 @@ class ObjCMethod(object):
 
 
 class ObjCBoundMethod(object):
-    """This represents an Objective-C method (an IMP) which has been bound 
+    """This represents an Objective-C method (an IMP) which has been bound
     to some id which will be passed as the first parameter to the method."""
 
     def __init__(self, method, objc_id):
@@ -114,7 +114,7 @@ class ObjCBoundMethod(object):
         """Call the method with the given arguments."""
         return self.method(self.objc_id, *args)
 
- 
+
 class ObjCClass(object):
     """Python wrapper for an Objective-C class."""
 
@@ -140,7 +140,7 @@ class ObjCClass(object):
             if not isinstance(ptr, c_void_p):
                 ptr = c_void_p(ptr)
             name = objc.class_getName(ptr)
-            
+
         # Check if we've already created a Python object for this class
         # and if so, return it rather than making a new one.
         if name in cls._registered_classes:
@@ -165,9 +165,9 @@ class ObjCClass(object):
 
     def __repr__(self):
         return "<ObjCClass: %s at %s>" % (self.name, str(self.ptr.value))
-        
+
     def cache_instance_methods(self):
-        """Create and store python representations of all instance methods 
+        """Create and store python representations of all instance methods
         implemented by this class (but does not find methods of superclass)."""
         count = c_uint()
         method_array = objc.class_copyMethodList(self.ptr, byref(count))
@@ -177,7 +177,7 @@ class ObjCClass(object):
             self.instance_methods[objc_method.pyname] = objc_method
 
     def cache_class_methods(self):
-        """Create and store python representations of all class methods 
+        """Create and store python representations of all class methods
         implemented by this class (but does not find methods of superclass)."""
         count = c_uint()
         method_array = objc.class_copyMethodList(objc.object_getClass(self.ptr), byref(count))
@@ -187,7 +187,7 @@ class ObjCClass(object):
             self.class_methods[objc_method.pyname] = objc_method
 
     def get_instance_method(self, name):
-        """Returns a python representation of the named instance method, 
+        """Returns a python representation of the named instance method,
         either by looking it up in the cached list of methods or by searching
         for and creating a new method object."""
         if name in self.instance_methods:
@@ -203,7 +203,7 @@ class ObjCClass(object):
         return None
 
     def get_class_method(self, name):
-        """Returns a python representation of the named class method, 
+        """Returns a python representation of the named class method,
         either by looking it up in the cached list of methods or by searching
         for and creating a new method object."""
         if name in self.class_methods:
@@ -217,7 +217,7 @@ class ObjCClass(object):
                 self.class_methods[name] = objc_method
                 return objc_method
         return None
-        
+
     def __getattr__(self, name):
         """Returns a callable method object with the given name."""
         # If name refers to a class method, then return a callable object
@@ -228,7 +228,7 @@ class ObjCClass(object):
         # If name refers to an instance method, then simply return the method.
         # The caller will need to supply an instance as the first parameter.
         method = self.get_instance_method(name)
-        if method: 
+        if method:
             return method
         # Otherwise, raise an exception.
         raise AttributeError('ObjCClass %s has no attribute %s' % (self.name, name))
@@ -245,7 +245,7 @@ class ObjCInstance(object):
         # Make sure that object_ptr is wrapped in a c_void_p.
         if not isinstance(object_ptr, c_void_p):
             object_ptr = c_void_p(object_ptr)
-        
+
         # Check if we've already created an python ObjCInstance for this
         # object_ptr id and if so, then return it.
         if object_ptr.value in cls._cached_objects:
@@ -276,14 +276,14 @@ class ObjCInstance(object):
         if method:
             return ObjCBoundMethod(method, self.ptr)
         # Else, search for class method with given name in the class object.
-        # If it exists, return callable object with a pointer to the class 
+        # If it exists, return callable object with a pointer to the class
         # as a hidden argument.
         method = self.objc_class.get_class_method(name)
         if method:
             return ObjCBoundMethod(method, self.objc_class.ptr)
         # Otherwise raise an exception.
         raise AttributeError('ObjCInstance %s has no attribute %s' % (self.objc_class.name, name))
-        
+
 
 
 class ObjCSubclass2(object):
@@ -313,7 +313,7 @@ class ObjCSubclass2(object):
     def add_class_method(self, method, name, encoding):
         imp = add_method(self.objc_metaclass, name, method, encoding)
         self._imp_table[name] = imp
-    
+
     def method(self, encoding):
         """Function decorator for instance methods."""
         # Add encodings for hidden self and cmd arguments.
@@ -329,7 +329,7 @@ class ObjCSubclass2(object):
             self.add_method(objc_method, name, encoding)
             return objc_method
         return decorator
-    
+
     def classmethod(self, encoding):
         """Function decorator for class methods."""
         # Add encodings for hidden self and cmd arguments.
@@ -352,11 +352,11 @@ class ObjCSubclass2(object):
         #setattr(self.PythonSelf, f.func_name, f)
         #return f
         pass
-        
+
 
 class MySubclassImplementation(object):
     MySubclass = ObjCSubclass2('NSObject', 'MySubclass')
-    
+
     @MySubclass.method('v')
     def doSomething(self):
         if not hasattr(self, 'x'):
@@ -375,7 +375,7 @@ def run_window():
     NSWindow = ObjCClass('NSWindow')
 
     app = NSApplication.sharedApplication()
-    
+
     pool = NSAutoreleasePool.alloc().init()
 
     window = NSWindow.alloc()
@@ -406,9 +406,9 @@ def stupid_stuff():
     print x.retain()
     print x.retainCount()
     print x.retainCount()
-    print x.retain()    
+    print x.retain()
     print x.retainCount()
-    print x.retain()    
+    print x.retain()
     print x.retainCount()
     y = NSObject.alloc()
     print 'y', y
@@ -418,12 +418,12 @@ def stupid_stuff():
     print y.retain()
     print y.retainCount()
 
-        
+
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print 'USAGE: python class_wrapper3.py <Obj-C Class>'
         exit(1)
-    
+
     class_name = sys.argv[1]
 
     MySubclass = ObjCClass('MySubclass')
@@ -439,5 +439,5 @@ if __name__ == '__main__':
     del x
 
     print ObjCInstance._cached_objects.items()
-    
+
     #run_window()

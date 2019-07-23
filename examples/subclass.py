@@ -49,18 +49,18 @@ if __name__ == '__main__':
 
     myobject1 = MySubclass.alloc().init()
     print 'after init: myobject1 =', myobject1
-    
+
     myobject1.doSomething()
 
     print
-    
+
     myobject2 = MySubclass.alloc().init()
     print 'after init: myobject2 =', myobject2
     myobject2.doSomething()
     #myobject2.doSomething()
     #myobject2.doSomethingElse()
 
-    print 
+    print
 
     myobject1.doSomethingElse(myobject2)
     class Foo:

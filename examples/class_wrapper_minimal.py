@@ -6,7 +6,7 @@ from objc_runtime import *
 class ObjCId(object):
     def __init__(self, objc_id):
         self.ptr = objc_id
-        
+
     def __repr__(self):
         return '<ObjId: %d at %#x>' % (self.ptr, id(self))
 

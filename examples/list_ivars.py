@@ -15,18 +15,16 @@ def list_ivars(cls):
         names.append((name, encoding))
 
     names.sort()
-    for x, y in names: 
+    for x, y in names:
         print x, y
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print 'USAGE: python list_ivars.py <Obj-C Class>'
         exit(1)
-    
+
     class_name = sys.argv[1]
     cls = get_class(class_name)
 
     print class_name, 'instance variables:'
     list_ivars(cls)
-        
-

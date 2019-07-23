@@ -17,20 +17,20 @@ def list_methods(cls):
         names.append((name, encoding, return_type))
 
     names.sort()
-    for x, y, z in names: 
+    for x, y, z in names:
         print x, y
 
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print 'USAGE: python list_methods.py <Obj-C Class>'
         exit(1)
-    
+
     class_name = sys.argv[1]
     cls = get_class(class_name)
 
     print class_name, 'instance methods:'
     list_methods(cls)
-        
+
     print
     print class_name, 'class methods:'
     list_methods(get_object_class(cls))

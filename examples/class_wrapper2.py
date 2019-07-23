@@ -6,14 +6,14 @@ from cocoapy.runtime import *
 class ObjCMethod(object):
     """This represents an unbound Objective-C method (really an IMP)."""
 
-    typecodes = {'c':c_char, 'i':c_int, 's':c_short, 'l':c_long, 'q':c_longlong, 
-                 'C':c_ubyte, 'I':c_uint, 'S':c_ushort, 'L':c_ulong, 'Q':c_ulonglong, 
+    typecodes = {'c':c_char, 'i':c_int, 's':c_short, 'l':c_long, 'q':c_longlong,
+                 'C':c_ubyte, 'I':c_uint, 'S':c_ushort, 'L':c_ulong, 'Q':c_ulonglong,
                  'f':c_float, 'd':c_double, 'B':c_bool, 'v':None, 'Vv':None, '*':c_char_p,
-                 '@':c_void_p, '#':c_void_p, ':':c_void_p, '^v':c_void_p, 
+                 '@':c_void_p, '#':c_void_p, ':':c_void_p, '^v':c_void_p,
                  NSPointEncoding:NSPoint, NSSizeEncoding:NSSize, NSRectEncoding:NSRect}
 
     cfunctype_table = {}
-    
+
     def __init__(self, method):
         """Initialize with an Objective-C Method pointer.  We then determine
         the return type and argument type information of the method."""
@@ -59,12 +59,12 @@ class ObjCMethod(object):
             return self.typecodes[encoding[1:]]
         else:
             raise Exception('unknown encoding for %s: %s' % (self.name, encoding))
-        
+
     def get_prototype(self):
         """Returns a ctypes CFUNCTYPE for the method."""
         self.prototype = CFUNCTYPE(self.restype, *self.argtypes)
         return self.prototype
-    
+
     def __repr__(self):
         return "<ObjCMethod: %s %s>" % (self.name, self.encoding)
 
@@ -76,17 +76,17 @@ class ObjCMethod(object):
             self.func.restype = self.restype
             self.func.argtypes = self.argtypes
         return self.func
-   
+
     def __call__(self, objc_id, *args):
         """Call the method with the given id and arguments.  You do not need
-        to pass in the selector as an argument since it will be automatically 
+        to pass in the selector as an argument since it will be automatically
         provided."""
         f = self.get_callable()
         return f(objc_id, self.selector, *args)
 
 
 class ObjCBoundMethod(object):
-    """This represents an Objective-C method (an IMP) which has been bound 
+    """This represents an Objective-C method (an IMP) which has been bound
     to some id which will be passed as the first parameter to the method."""
 
     def __init__(self, method, objc_id):
@@ -101,12 +101,12 @@ class ObjCBoundMethod(object):
         """Call the method with the given arguments."""
         return self.method(self.objc_id, *args)
 
- 
+
 class ObjCClassRegistry(object):
     """Keeps track of all Objective-C classes that we've pythonized."""
 
     registered_classes = {}
-    
+
     def register(self, class_name_or_ptr):
         """This method is used to retrieve a class object.  You may
         pass it either a name or a pointer value."""
@@ -144,9 +144,9 @@ class ObjCClass(object):
 
     def __repr__(self):
         return "<ObjCClass: %s at %d>" % (self.name, self.ptr.value)
-        
+
     def cache_instance_methods(self):
-        """Create and store python representations of all instance methods 
+        """Create and store python representations of all instance methods
         implemented by this class (but does not find methods of superclass)."""
         count = c_uint()
         method_array = objc.class_copyMethodList(self.ptr, byref(count))
@@ -156,7 +156,7 @@ class ObjCClass(object):
             self.instance_methods[objc_method.pyname] = objc_method
 
     def cache_class_methods(self):
-        """Create and store python representations of all class methods 
+        """Create and store python representations of all class methods
         implemented by this class (but does not find methods of superclass)."""
         count = c_uint()
         method_array = objc.class_copyMethodList(objc.object_getClass(self.ptr), byref(count))
@@ -166,7 +166,7 @@ class ObjCClass(object):
             self.class_methods[objc_method.pyname] = objc_method
 
     def get_instance_method(self, name):
-        """Returns a python representation of the named instance method, 
+        """Returns a python representation of the named instance method,
         either by looking it up in the cached list of methods or by searching
         for and creating a new method object."""
         if name in self.instance_methods:
@@ -182,7 +182,7 @@ class ObjCClass(object):
         return None
 
     def get_class_method(self, name):
-        """Returns a python representation of the named class method, 
+        """Returns a python representation of the named class method,
         either by looking it up in the cached list of methods or by searching
         for and creating a new method object."""
         if name in self.class_methods:
@@ -196,7 +196,7 @@ class ObjCClass(object):
                 self.class_methods[name] = objc_method
                 return objc_method
         return None
-        
+
     def __getattr__(self, name):
         """Returns a callable method object with the given name."""
         # If name refers to a class method, then return a callable object
@@ -207,7 +207,7 @@ class ObjCClass(object):
         # If name refers to an instance method, then simply return the method.
         # The caller will need to supply an instance as the first parameter.
         method = self.get_instance_method(name)
-        if method: 
+        if method:
             return method
         # Otherwise, raise an exception.
         raise AttributeError('ObjCClass %s has no attribute %s' % (self.name, name))
@@ -237,21 +237,21 @@ class ObjCInstance(object):
         if method:
             return ObjCBoundMethod(method, self.ptr)
         # Else, search for class method with given name in the class object.
-        # If it exists, return callable object with a pointer to the class 
+        # If it exists, return callable object with a pointer to the class
         # as a hidden argument.
         method = self.objc_class.get_class_method(name)
         if method:
             return ObjCBoundMethod(method, self.objc_class.ptr)
         # Otherwise raise an exception.
         raise AttributeError('ObjCInstance %s has no attribute %s' % (self.name, name))
-        
-    
-        
+
+
+
 if __name__ == '__main__':
     if len(sys.argv) < 2:
         print 'USAGE: python class_wrapper2.py <Obj-C Class>'
         exit(1)
-    
+
     class_name = sys.argv[1]
     NSObject = objc_class_registry.register(class_name)
     print NSObject
@@ -266,9 +266,9 @@ if __name__ == '__main__':
     print x.retain()
     print x.retainCount()
     print x.retainCount()
-    print x.retain()    
+    print x.retain()
     print x.retainCount()
-    print x.retain()    
+    print x.retain()
     print x.retainCount()
     y = NSObject.alloc()
     print 'y', y
@@ -277,6 +277,3 @@ if __name__ == '__main__':
     print y.retain()
     print y.retainCount()
     #print x.blah()
-
-
-
