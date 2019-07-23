@@ -1,0 +1,9 @@
+# Python compilation:
+__pycache__
+
+# OS X:
+.DS_Store
+
+# Editor auto saves:
+*~
+\#*\#
